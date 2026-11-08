@@ -1,0 +1,2659 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyGlide | Premium Python IDE</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --sidebar: #070708;
+            --accent: #3b82f6;
+            --accent-dim: rgba(59, 130, 246, 0.15);
+            --border: rgba(255,255,255,0.08);
+            --success: #10b981;
+            --error: #ef4444;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --editor-bg: #0f0f11;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+        
+        .layout { display: flex; height: 100vh; width: 100vw; }
+        .sidebar { width: 240px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 2rem 1rem; display: flex; flex-direction: column; }
+        .main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        .toolbar { height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; background: rgba(10, 10, 12, 0.8); backdrop-filter: blur(10px); }
+        .editor-zone { flex: 1; position: relative; background: var(--editor-bg); display: flex; overflow: hidden; }
+        
+        .editor-container { position: relative; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        
+        .tabs-container { height: 40px; background: var(--sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: flex-end; padding: 0 10px; gap: 4px; overflow-x: auto; }
+        .editor-tab { padding: 8px 16px; background: rgba(255,255,255,0.02); color: var(--text-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; }
+        .editor-tab.active { background: var(--editor-bg); color: var(--accent); border-color: var(--border); font-weight: 600; border-top: 2px solid var(--accent); }
+        .editor-tab:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--text); }
+        .tab-close { font-size: 14px; opacity: 0.5; cursor: pointer; }
+        .tab-close:hover { opacity: 1; color: var(--error); }
+        
+        #monaco-container { flex: 1; width: 100%; height: 100%; }
+        
+        .terminal { display: flex; flex-direction: column; border-top: 1px solid var(--border); background: #070708; z-index: 50; position: relative; }
+        .terminal-resizer { width: 100%; height: 6px; cursor: row-resize; position: absolute; top: -3px; left: 0; z-index: 100; transition: background 0.2s; }
+        .terminal-resizer:hover, .terminal-resizer:active { background: var(--accent); opacity: 0.8; }
+        .terminal-header { font-size: 0.7rem; color: var(--text-dim); padding: 10px 20px; font-weight: 800; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center; }
+        #xterm-container { flex: 1; overflow: hidden; background: #070708; }
+        .xterm-viewport { overflow-y: auto !important; }
+        
+        /* ENHANCED RCA PANEL */
+        .rca-panel { 
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 500px; /* Wider for better reading */
+            max-width: 90%;
+            background: rgba(10, 10, 12, 0.98); 
+            border-left: 1px solid var(--border); 
+            backdrop-filter: blur(40px); 
+            padding: 2.5rem; 
+            overflow-y: auto; 
+            z-index: 100; 
+            box-shadow: -30px 0 60px rgba(0,0,0,0.6); 
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            animation: slideInRca 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        @keyframes slideInRca {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        .rca-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+        .rca-title { font-size: 0.75rem; font-weight: 800; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; }
+        
+        .diagnostic-card { 
+            background: linear-gradient(145deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%); 
+            border: 1px solid rgba(59, 130, 246, 0.2); 
+            padding: 1.5rem; 
+            border-radius: 12px; 
+        }
+        
+        .diagnostic-section { margin-bottom: 1.25rem; }
+        .diagnostic-section:last-child { margin-bottom: 0; }
+        .diagnostic-label { font-size: 0.65rem; font-weight: 800; color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
+        .diagnostic-text { font-size: 0.9rem; line-height: 1.6; color: #e2e8f0; font-weight: 400; }
+        .model-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem; }
+        .model-chip { border: 1px solid rgba(59, 130, 246, 0.25); background: rgba(59, 130, 246, 0.1); color: #bfdbfe; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+        .model-chip.success { border-color: rgba(16, 185, 129, 0.28); background: rgba(16, 185, 129, 0.1); color: #bbf7d0; }
+        .feedback-block { border: 1px solid var(--border); background: rgba(255,255,255,0.025); border-radius: 10px; padding: 1rem; margin-top: 1rem; }
+        .feedback-block-title { color: var(--text-dim); font-size: 0.65rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.75rem; }
+        .feedback-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.65rem; color: #e2e8f0; font-size: 0.84rem; line-height: 1.55; }
+        .feedback-list li::marker { color: var(--success); }
+        .code-suggestion { margin-top: 0.75rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(147, 197, 253, 0.12); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.78rem; line-height: 1.5; overflow: auto; }
+        .log-excerpt { margin: 0.75rem 0 0; background: rgba(0,0,0,0.35); border: 1px solid rgba(59, 130, 246, 0.18); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; line-height: 1.55; max-height: 220px; overflow: auto; }
+        .log-upload-input { display: none; }
+        .translate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 0.85rem; }
+        .language-select { flex: 1; min-width: 150px; background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; font-family: inherit; outline: none; cursor: pointer; }
+        .language-select option { background: #0a0a0c; color: #e2e8f0; }
+        .translated-output { margin-top: 0.85rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; line-height: 1.6; font-family: inherit; }
+        .translation-error { margin-top: 0.75rem; color: #f87171; font-size: 0.78rem; line-height: 1.5; }
+        
+        /* GRAPH-BASED RCA STYLES */
+        .graph-container { position: relative; padding: 10px 0 20px 30px; }
+        .graph-node { position: relative; background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 12px; margin-bottom: 2.5rem; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .graph-node.root { border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.05); }
+        .graph-node.exception { border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.05); }
+        
+        .graph-edge { position: absolute; left: -15px; top: 0; width: 2px; height: 100%; border-left: 2px dashed rgba(255,255,255,0.2); }
+        .graph-arrow { position: absolute; left: -21px; bottom: -25px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid rgba(255,255,255,0.2); }
+        
+        .node-tag { position: absolute; right: 15px; top: -10px; font-size: 9px; font-weight: 900; padding: 3px 10px; border-radius: 12px; letter-spacing: 0.05em; }
+        .node-tag.root { background: var(--success); color: #000; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+        .node-tag.exception { background: var(--error); color: #fff; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        
+        .recommendation-card { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 1.5rem; border-radius: 16px; margin-top: 3rem; }
+        .btn { background: var(--accent); color: #000; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s ease; }
+        .btn:hover:not(:disabled) { background: #60a5fa; transform: translateY(-1px); }
+        .btn-secondary { background: #222; color: #fff; border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #333; }
+        
+        .logo { font-size: 0.85rem; font-weight: 900; letter-spacing: 2px; color: var(--accent); margin-bottom: 3rem; padding-left: 10px; }
+        .file-item { padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; border-radius: 6px; transition: all 0.2s; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-weight: 500; overflow: hidden; }
+        .file-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .file-item:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+        .file-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+        
+        .context-menu { position: fixed; background: rgba(20, 20, 22, 0.98); border: 1px solid var(--border); backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 8px; padding: 6px; z-index: 9999; display: flex; flex-direction: column; min-width: 180px; }
+        .context-menu-item { padding: 8px 12px; font-size: 0.8rem; color: var(--text); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 10px; transition: background 0.1s; }
+        .context-menu-item:hover { background: var(--accent-dim); color: var(--accent); }
+        .context-menu-item.danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+        .context-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+        
+        .stats-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 4rem; overflow-y: auto; backdrop-filter: blur(40px); }
+    </style>
+    <link rel="stylesheet" href="/src/workspace.css">
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useLayoutEffect, useRef } = React;
+
+        const safeGetStats = () => {
+            try {
+                const data = localStorage.getItem('pyglide_stats');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (parsed?.concepts && typeof parsed.concepts === 'object' && !Array.isArray(parsed.concepts)) {
+                        const concepts = Object.fromEntries(Object.entries(parsed.concepts)
+                            .filter(([name, count]) => name && Number.isInteger(count) && count > 0)
+                            .map(([name, count]) => [name, Math.floor(count)]));
+                        return { concepts, total: Object.values(concepts).reduce((sum, count) => sum + count, 0) };
+                    }
+                }
+            } catch (e) {
+                console.error("Stats parse error:", e);
+            }
+            return { total: 0, concepts: {} };
+        };
+
+        const safeSaveStats = (stats) => {
+            try {
+                localStorage.setItem('pyglide_stats', JSON.stringify(stats));
+                window.dispatchEvent(new Event('pyglide-stats'));
+            } catch (e) {
+                console.error("Stats save error:", e);
+            }
+        };
+
+        const EXAMPLES_FOLDER_ID = 'pyglide-examples';
+        const WORKSPACE_FOLDER_ID = 'pyglide-workspace';
+        const EXAMPLES_API = 'http://localhost:8000/workspace/examples';
+
+        const extractExceptionType = (msg) => {
+            const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
+            const last = lines[lines.length - 1] || "";
+            const match = last.match(/^([A-Za-z_][\w.]*Error):?/);
+            if (match) return match[1].split('.').pop();
+            const any = msg.match(/\b([A-Za-z_][A-Za-z0-9_]*Error)\b/);
+            return any ? any[1] : "RuntimeError";
+        };
+
+        const extractExceptionMessage = (msg) => {
+            const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
+            const last = lines[lines.length - 1] || msg;
+            return last.replace(/^[A-Za-z_][\w.]*Error:\s*/, '');
+        };
+
+        const fetchLocalMLFeedback = async (traceback, code) => {
+            const response = await fetch('http://localhost:8000/rca', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    exception_type: extractExceptionType(traceback),
+                    message: extractExceptionMessage(traceback),
+                    traceback,
+                    code
+                })
+            });
+            if (!response.ok) throw new Error(`Local model server returned ${response.status}`);
+            const data = await response.json();
+            return data.llm_feedback;
+        };
+
+        // =========================================================
+        // PageRank-based Root Cause Identification
+        // Ported from SemanticLogDebugger_RootCauseAnalysis/SematicLogDebugger_Final.ipynb
+        // Core algorithm: perform_rca() - builds a DAG from the execution trace,
+        // runs PageRank (alpha=0.85) and picks the highest-scoring node as root cause.
+        // =========================================================
+        const pageRank = (nodes, edges, alpha = 0.85, maxIter = 100, tol = 1e-6) => {
+            if (nodes.length === 0) return {};
+            const N = nodes.length;
+            const nodeIdx = {};
+            nodes.forEach((n, i) => nodeIdx[n] = i);
+
+            // Build adjacency: outEdges[i] = list of j that i points to
+            const outEdges = Array.from({length: N}, () => []);
+            const inEdges  = Array.from({length: N}, () => []);
+            edges.forEach(([src, dst]) => {
+                const s = nodeIdx[src], d = nodeIdx[dst];
+                if (s !== undefined && d !== undefined) {
+                    outEdges[s].push(d);
+                    inEdges[d].push(s);
+                }
+            });
+
+            let scores = new Array(N).fill(1 / N);
+            for (let iter = 0; iter < maxIter; iter++) {
+                const newScores = new Array(N).fill((1 - alpha) / N);
+                for (let i = 0; i < N; i++) {
+                    const outs = outEdges[i];
+                    if (outs.length === 0) {
+                        // Dangling node: distributes rank equally to all
+                        const share = alpha * scores[i] / N;
+                        for (let j = 0; j < N; j++) newScores[j] += share;
+                    } else {
+                        const share = alpha * scores[i] / outs.length;
+                        outs.forEach(j => newScores[j] += share);
+                    }
+                }
+                // Check convergence
+                const diff = scores.reduce((s, v, i) => s + Math.abs(v - newScores[i]), 0);
+                scores = newScores;
+                if (diff < tol) break;
+            }
+
+            const result = {};
+            nodes.forEach((n, i) => result[n] = scores[i]);
+            return result;
+        };
+
+        const analyze = (msg, code) => {
+            const frames = [];
+            const codeLines = code.split('\n');
+            const totalLines = codeLines.length;
+            const regex = /File "(.*)", line (\d+), in (.*)/g;
+            let m;
+            while ((m = regex.exec(msg)) !== null) {
+                const ln = parseInt(m[2]);
+                if (ln <= totalLines) frames.push({ line: ln, func: m[3], code: codeLines[ln-1] || "" });
+            }
+            if (frames.length === 0) {
+                const lnMatch = msg.match(/line (\d+)/);
+                if (lnMatch) {
+                    const ln = parseInt(lnMatch[1]);
+                    if (ln <= totalLines) frames.push({ line: ln, func: "module", code: codeLines[ln-1] || "" });
+                }
+            }
+
+            const insights = [
+                { 
+                    pattern: /SyntaxError/, 
+                    title: "Syntax Error", 
+                    symptom: "Python could not parse the code at line {LINE} — this is a compilation failure, not a runtime failure.", 
+                    cause: "A syntax error means the code structure violated Python grammar rules. Common causes include a missing colon after `def` or `if`, mismatched parentheses or brackets, invalid use of operators, or illegal indentation.",
+                    resolution: "Carefully inspect the flagged line and the line immediately above it. Look for unclosed brackets, missing colons, or misplaced keywords."
+                },
+                { 
+                    pattern: /IndentationError/, 
+                    title: "Indentation Error", 
+                    symptom: "Python detected an inconsistent or unexpected indentation level at line {LINE}.", 
+                    cause: "Python uses indentation to define code blocks. Mixing tabs and spaces, or using inconsistent indent widths across a block, causes the parser to reject the file before execution.",
+                    resolution: "Ensure all indentation uses consistent spaces (4 spaces recommended). Use an editor with visible whitespace to detect tab/space mixing. The offending line is typically one that breaks the expected indentation depth."
+                },
+                { 
+                    pattern: /ZeroDivision/, 
+                    title: "Mathematical Inconsistency", 
+                    symptom: "The program attempted to divide a number by zero at line {LINE}.", 
+                    cause: "Python cannot mathematically reconcile division by zero. This usually happens when a variable acting as a denominator evaluates to 0 during runtime — often because of an unvalidated user input or a loop that reduces a counter to zero.",
+                    resolution: "Implement a guard clause (e.g., `if denominator == 0: return`) before the division operation. Trace which code path produces the zero denominator and validate input early."
+                },
+                { 
+                    pattern: /IndexError/, 
+                    title: "Boundary Violation", 
+                    symptom: "The code attempted to access an element in a sequence using an out-of-bounds index at line {LINE}.", 
+                    cause: "The index requested is either greater than the maximum valid index (length - 1), or negative enough to wrap past the beginning of the sequence. For example, accessing index 4 in a 3-item list.",
+                    resolution: "Verify your loop boundaries or index calculations. Ensure they strictly satisfy `0 <= index < len(sequence)`. Consider using `enumerate()` for safe iteration instead of manual indexing."
+                },
+                { 
+                    pattern: /KeyError/, 
+                    title: "Schema Violation", 
+                    symptom: "A required data identifier (key) was missing from a dictionary at line {LINE}.", 
+                    cause: "The code explicitly requested a key that does not exist in the current dictionary. This often occurs when processing dynamic API responses, iterating over objects with inconsistent schemas, or after a key was renamed or removed.",
+                    resolution: "Use `dict.get(key, default_value)` for safe access, or check `if key in dict:` before accessing. For nested keys, validate each level independently before accessing."
+                },
+                { 
+                    pattern: /NameError/, 
+                    title: "Identifier Failure", 
+                    symptom: "An undefined variable or function name was referenced at line {LINE}.", 
+                    cause: "The Python interpreter encountered a name it does not recognize in the current scope. This is typically due to a typo, a missing import statement, or calling a variable before it has been assigned a value in the executing scope.",
+                    resolution: "Check the spelling of the identifier carefully. Ensure the variable is assigned before use, and that any required modules are imported at the top of the file. If defined inside a function, verify the scope is accessible from the call site."
+                }
+            ];
+            
+            let ins = { 
+                title: "Logic Anomaly", 
+                symptom: "A logical interruption occurred during execution at line {LINE}.", 
+                cause: "An unexpected state was reached that the runtime could not process.",
+                resolution: "Review the causal chain below to trace the exact injection point of the fault."
+            };
+            
+            for (const i of insights) if (i.pattern.test(msg)) ins = i;
+
+            const stats = safeGetStats();
+            stats.total += 1;
+            stats.concepts[ins.title] = (stats.concepts[ins.title] || 0) + 1;
+            safeSaveStats(stats);
+
+            // =========================================================
+            // DAG + PageRank Root Cause Selection
+            // Mirrors SemanticLogDebugger.perform_rca():
+            //   G = nx.DiGraph((seq[i], seq[i+1]) for i in range(len(seq)-1))
+            //   chosen = max(nx.pagerank(G, alpha=0.85), key=scores.get)
+            // Frames = trace nodes; sequential call order = directed edges
+            // =========================================================
+            let rcIdx = 0;
+            let rcExplanation = 'fallback: single frame';
+
+            if (frames.length === 1) {
+                rcIdx = 0;
+                rcExplanation = 'singleton trace';
+            } else if (frames.length > 1) {
+                // Build node list (use func+line as unique node ID)
+                const nodeIds = frames.map((f, i) => `${f.func}@${f.line}@${i}`);
+                // Build edges: execution order seq[i] -> seq[i+1]
+                const edges = [];
+                for (let i = 0; i < nodeIds.length - 1; i++) {
+                    edges.push([nodeIds[i], nodeIds[i + 1]]);
+                }
+                const scores = pageRank(nodeIds, edges, 0.85);
+                // Find the frame with the highest PageRank score
+                let bestScore = -1;
+                nodeIds.forEach((nid, i) => {
+                    if (scores[nid] > bestScore) { bestScore = scores[nid]; rcIdx = i; }
+                });
+                rcExplanation = `root by PageRank (score: ${bestScore.toFixed(4)})`;
+            }
+
+            const lineRef = frames.length > 0 ? frames[rcIdx].line : "?";
+            const rcFrame = frames[rcIdx];
+            const lineCode = rcFrame ? rcFrame.code.trim() : '';
+            
+            return { 
+                frames, 
+                rc: rcIdx,
+                rawMsg: msg,
+                lineCode,
+                ins: { 
+                    title: ins.title,
+                    symptom: ins.symptom.replace(/{LINE}/g, lineRef),
+                    cause: ins.cause.replace(/{LINE}/g, lineRef),
+                    resolution: ins.resolution.replace(/{LINE}/g, lineRef)
+                } 
+            };
+        };
+
+        function AnalyticsPanel({ onBack }) {
+            const [stats, setStats] = useState(safeGetStats);
+            useEffect(() => {
+                const refresh = () => setStats(safeGetStats());
+                window.addEventListener('pyglide-stats', refresh);
+                window.addEventListener('storage', refresh);
+                return () => {
+                    window.removeEventListener('pyglide-stats', refresh);
+                    window.removeEventListener('storage', refresh);
+                };
+            }, []);
+            const entries = Object.entries(stats.concepts).sort((a,b)=>b[1]-a[1]);
+            const maxVal = Math.max(...Object.values(stats.concepts), 1);
+            
+            const topError = entries.length > 0 ? entries[0][0] : "None Yet";
+            const secondError = entries.length > 1 ? entries[1][0] : null;
+
+            const maps = {
+                "MATHEMATICAL INCONSISTENCY": {
+                    focus: "Math & Edge Cases",
+                    tips: [
+                        "Check your numbers before doing math, especially division.",
+                        "Handle unexpected zero values early so the code doesn't crash.",
+                        "Think about what happens if a variable is empty or negative."
+                    ]
+                },
+                "BOUNDARY VIOLATION": {
+                    focus: "Lists & Loops",
+                    tips: [
+                        "Always make sure the list item you want actually exists.",
+                        "Be careful when looping—don't accidentally go past the end of the list.",
+                        "Check the length of your collections before trying to access the last few items."
+                    ]
+                },
+                "SCHEMA VIOLATION": {
+                    focus: "Data Structures",
+                    tips: [
+                        "Always check if a key exists in a dictionary before trying to use it.",
+                        "Provide a safe fallback value if the data you expect is missing.",
+                        "Make sure external data matches the format you expect before processing it."
+                    ]
+                },
+                "IDENTIFIER FAILURE": {
+                    focus: "Variables & Naming",
+                    tips: [
+                        "Make sure a variable is actually created before you try to use it.",
+                        "Check your spelling—a small typo can break the entire program.",
+                        "Be careful about where a variable lives; variables inside a function might not exist outside it."
+                    ]
+                },
+                "SYNTAX ERROR": {
+                    focus: "Code Formatting",
+                    tips: [
+                        "Watch out for missing parentheses or brackets.",
+                        "Make sure you remember to put colons at the end of 'if' statements and functions.",
+                        "Keep your code simple and readable to avoid structural mistakes."
+                    ]
+                },
+                "INDENTATION ERROR": {
+                    focus: "Spacing & Alignment",
+                    tips: [
+                        "Keep your spacing consistent everywhere.",
+                        "Don't mix tabs and spaces—pick one and stick to it.",
+                        "Pay close attention to how your code lines up inside loops and functions."
+                    ]
+                }
+            };
+
+            const defaultTips = [
+                "Break large problems into smaller, easier-to-read pieces.",
+                "Test your code frequently to catch mistakes early.",
+                "Write clear code that is easy to follow."
+            ];
+
+            const topMeta = maps[topError.toUpperCase()] || { focus: "Modularization & Testing", tips: defaultTips };
+            let combinedTips = [...topMeta.tips];
+            if (secondError && maps[secondError.toUpperCase()]) {
+                combinedTips.push(maps[secondError.toUpperCase()].tips[0]);
+            }
+            if (combinedTips.length < 4) {
+                combinedTips.push(defaultTips[0]);
+            }
+
+            return (
+                <div className="stats-overlay">
+                    <div style={{maxWidth:'1200px', margin:'0 auto'}}>
+                        <div className="aux-page-header" style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'2rem'}}>
+                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>PROGRAMMER FOCUS</h1>
+                            <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
+                        </div>
+                        
+                        <div className="analytics-overview" style={{display:'grid', gap:'2rem', marginBottom:'2rem'}}>
+                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Recorded Failures</div>
+                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--success)', lineHeight:'1.4'}}>{stats.total}</div>
+                                <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Failures recorded in this browser, not a measure of overall coding ability.</div>
+                            </div>
+                            
+                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Primary Focus Area</div>
+                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--error)', lineHeight:'1.4'}}>{topError}</div>
+                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Next recorded category: <span style={{color: '#fcd34d'}}>{secondError}</span></div>}
+                            </div>
+                        </div>
+
+                        <div className="analytics-details" style={{display:'grid', gap:'2rem'}}>
+                            {/* Fault Statistics */}
+                            <div style={{background:'rgba(255,255,255,0.015)', padding:'3rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
+                                <h2 style={{fontSize:'1.1rem', fontWeight:800, color:'var(--text-dim)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Fault Statistics</h2>
+                                {entries.length === 0 ? (
+                                    <div style={{color:'var(--text-dim)', fontStyle:'italic'}}>No statistical data recorded yet. Start coding!</div>
+                                ) : (
+                                    <div style={{display:'flex', flexDirection:'column', gap:'1.75rem'}}>
+                                        {entries.map(([c, count]) => (
+                                            <div key={c}>
+                                                <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.9rem', marginBottom:'0.75rem', fontWeight:600}}>
+                                                    <span style={{color: '#e2e8f0'}}>{c.toUpperCase()}</span>
+                                                    <span style={{color:'var(--accent)'}}>{count} instances</span>
+                                                </div>
+                                                <div style={{height:'6px', background:'rgba(255,255,255,0.05)', borderRadius:'3px', overflow:'hidden'}}>
+                                                    <div style={{height:'100%', background:'var(--accent)', width: `${(count/maxVal)*100}%`, borderRadius:'3px'}}></div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Programmer Growth Tips */}
+                            <div className="recommendation-card" style={{marginTop:0, padding:'3.5rem', borderRadius:'24px', background:'rgba(59, 130, 246, 0.05)'}}>
+                                <h2 style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Actionable Growth Plan</h2>
+                                
+                                <div style={{marginBottom:'3rem'}}>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'0.5rem', letterSpacing:'0.1em'}}>Suggested Study Area</div>
+                                    <div style={{fontSize:'1.8rem', fontWeight:600, color:'#fff'}}>{topMeta.focus}</div>
+                                </div>
+
+                                <div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'1.5rem', letterSpacing:'0.1em'}}>Key Practices to Focus On</div>
+                                    <ul style={{margin:0, paddingLeft:'1.5rem', color:'#e2e8f0', fontSize:'1.15rem', lineHeight:'1.8', display:'flex', flexDirection:'column', gap:'1.25rem'}}>
+                                        {combinedTips.slice(0, 4).map((tip, idx) => (
+                                            <li key={idx} style={{listStyleType:'disc'}}>{tip}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function BenchmarksPanel({ onBack, selectedModel, onSelect }) {
+            return (
+                <div className="stats-overlay">
+                    <div style={{maxWidth:'900px', margin:'0 auto'}}>
+                        <div className="aux-page-header">
+                            <h1>MODEL GUIDE</h1>
+                            <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
+                        </div>
+                        <p className="model-guide-note">Configured Ollama models for RCA feedback. Response times and output quality have not been benchmarked on this machine.</p>
+                        <div className="model-guide-list">
+                            {LOCAL_MODELS.map(model => (
+                                <section className="model-guide-card" key={model.id}>
+                                    <div>
+                                        <h2>{model.name}</h2>
+                                        <p>{model.description}</p>
+                                        <code>ollama pull {model.id}</code>
+                                    </div>
+                                    <button className="btn btn-secondary" onClick={() => onSelect(model.id)} disabled={selectedModel === model.id}>
+                                        {selectedModel === model.id ? 'SELECTED' : 'USE MODEL'}
+                                    </button>
+                                </section>
+                            ))}
+                        </div>
+                        <p className="model-guide-note">Install the selected model in your local Ollama instance. Runtime and feedback quality depend on your hardware, model, and input.</p>
+                    </div>
+                </div>
+            );
+        }
+
+        const readStoredValue = key => { try { return localStorage.getItem(key); } catch (error) { return null; } };
+
+        const loadFiles = () => {
+            try {
+                const parsed = JSON.parse(localStorage.getItem('pyglide_workspace') || '[]');
+                if (!Array.isArray(parsed)) return [];
+                const seen = new Set();
+                return parsed.filter(file => file && typeof file.id === 'string' && file.id && typeof file.name === 'string' && !seen.has(file.id) && seen.add(file.id))
+                    .map(file => ({ ...file, type: file.type === 'folder' ? 'folder' : 'file', parentId: file.parentId ?? null,
+                        ...(file.type !== 'folder' ? { content: typeof file.content === 'string' ? file.content : '' } : {}),
+                        ...(((file.id === '4' && file.name === 'complex_call_stack_error.py') ||
+                            (file.id === '5' && file.name === 'oop_complex_error.py')) && !file.examplePath
+                            ? { examplePath: file.name, isPredefined: true } : {}) }));
+            } catch(e) { return []; }
+        };
+        const loadTabs = () => {
+            try {
+                const saved = localStorage.getItem('pyglide_tabs');
+                if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) return parsed.filter(id => typeof id === 'string'); }
+            } catch(e) {}
+            return [];
+        };
+
+        const mergeExampleFiles = (existing, response) => {
+            const savedExamples = new Map(existing.filter(file => file.examplePath).map(file => [file.examplePath, file]));
+            // Relink the two matching samples from the old five-file workspace.
+            const legacyExamples = new Map(existing.filter(file =>
+                !file.examplePath && ((file.id === '4' && file.name === 'complex_call_stack_error.py') ||
+                (file.id === '5' && file.name === 'oop_complex_error.py'))).map(file => [file.name, file]));
+            const legacyIds = new Set([...legacyExamples.values()].map(file => file.id));
+            let result = existing.filter(file => !file.examplePath && !file.isExamplesFolder && !legacyIds.has(file.id));
+            const needsWorkspace = result.some(file => (file.type === 'file' && !file.parentId) ||
+                (!response.folder_exists && file.parentId === EXAMPLES_FOLDER_ID));
+            if (needsWorkspace && !result.some(file => file.id === WORKSPACE_FOLDER_ID)) {
+                result.unshift({ id: WORKSPACE_FOLDER_ID, name: 'workspace', type: 'folder', parentId: null, isOpen: true });
+            }
+            result = result.map(file => ((file.type === 'file' && !file.parentId) ||
+                (!response.folder_exists && file.parentId === EXAMPLES_FOLDER_ID))
+                ? { ...file, parentId: WORKSPACE_FOLDER_ID } : file);
+            if (!response.folder_exists) return result;
+            const previousFolder = existing.find(file => file.isExamplesFolder);
+            const folder = { id: EXAMPLES_FOLDER_ID, name: previousFolder?.name || 'examples', type: 'folder', parentId: null,
+                isOpen: previousFolder?.isOpen ?? true, isExamplesFolder: true };
+            const examples = response.files.map(file => {
+                const saved = savedExamples.get(file.examplePath) || legacyExamples.get(file.name);
+                const hasLocalEdits = saved && (saved.sourceContent === undefined || saved.content !== saved.sourceContent);
+                const parentId = saved?.parentId && result.some(node => node.id === saved.parentId && node.type === 'folder')
+                    ? saved.parentId : EXAMPLES_FOLDER_ID;
+                return { ...file, ...(saved || {}), type: 'file', parentId,
+                    content: hasLocalEdits ? saved.content : file.content, sourceContent: file.content,
+                    examplePath: file.examplePath, isPredefined: file.isPredefined };
+            });
+            return [folder, ...examples, ...result];
+        };
+
+        const validWorkspaceName = name => Boolean(name && name !== '.' && name !== '..' && !/[. ]$/.test(name) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) && !/[\\/:*?"<>|\x00-\x1f]/.test(name));
+        const uniqueCopyName = (name, siblingNames) => {
+            const dot = name.lastIndexOf('.');
+            const stem = dot > 0 ? name.slice(0, dot) : name;
+            const extension = dot > 0 ? name.slice(dot) : '';
+            let number = 1;
+            let candidate;
+            do { candidate = `${stem}_copy${number === 1 ? '' : number}${extension}`; number++; }
+            while (siblingNames.some(existing => existing.toLowerCase() === candidate.toLowerCase()));
+            return candidate;
+        };
+
+        const subtreeIds = (id, files) => {
+            const ids = new Set([id]);
+            let count;
+            do {
+                count = ids.size;
+                files.forEach(file => { if (ids.has(file.parentId)) ids.add(file.id); });
+            } while (ids.size !== count);
+            return ids;
+        };
+
+        const parsePartialJSON = (raw) => {
+            const result = {};
+            if (!raw) return result;
+            
+            // Clean markdown code fences if any
+            let cleaned = raw.replace(/```(?:json)?/g, "").trim();
+            
+            const stringFields = ["headline", "diagnosis", "root_cause", "primary_fix", "severity", "learning_note"];
+            stringFields.forEach(field => {
+                const completeRegex = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
+                const completeMatch = cleaned.match(completeRegex);
+                if (completeMatch) {
+                    result[field] = completeMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                } else {
+                    const partialRegex = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)$`);
+                    const partialMatch = cleaned.match(partialRegex);
+                    if (partialMatch) {
+                        result[field] = partialMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                    }
+                }
+            });
+
+            const listFields = ["evidence", "fix_steps", "prevention", "validation_checks", "debug_questions"];
+            listFields.forEach(field => {
+                const arrayRegex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`);
+                const arrayMatch = cleaned.match(arrayRegex);
+                if (arrayMatch) {
+                    const itemsText = arrayMatch[1];
+                    const items = [];
+                    const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
+                    let itemMatch;
+                    while ((itemMatch = itemRegex.exec(itemsText)) !== null) {
+                        const val = itemMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                        if (!["title", "reason", "before", "after", "step"].includes(val.toLowerCase().trim())) {
+                            items.push(val);
+                        }
+                    }
+                    result[field] = items;
+                } else {
+                    const partialArrayRegex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)$`);
+                    const partialArrayMatch = cleaned.match(partialArrayRegex);
+                    if (partialArrayMatch) {
+                        const itemsText = partialArrayMatch[1];
+                        const items = [];
+                        const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
+                        let itemMatch;
+                        let lastIndex = 0;
+                        while ((itemMatch = itemRegex.exec(itemsText)) !== null) {
+                            const val = itemMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            if (!["title", "reason", "before", "after", "step"].includes(val.toLowerCase().trim())) {
+                                items.push(val);
+                            }
+                            lastIndex = itemRegex.lastIndex;
+                        }
+                        const trailingText = itemsText.slice(lastIndex);
+                        const trailingMatch = trailingText.match(/"((?:[^"\\]|\\.)*)$/);
+                        if (trailingMatch) {
+                            items.push(trailingMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n'));
+                        }
+                        result[field] = items;
+                    }
+                }
+            });
+
+            const actionsRegex = /"code_actions"\s*:\s*\[([\s\S]*?)\]/;
+            const actionsMatch = cleaned.match(actionsRegex);
+            if (actionsMatch) {
+                const actionsText = actionsMatch[1];
+                const actions = [];
+                const objRegex = /\{([\s\S]*?)\}/g;
+                let objMatch;
+                while ((objMatch = objRegex.exec(actionsText)) !== null) {
+                    const objContent = objMatch[1];
+                    const action = {};
+                    ["title", "reason", "before", "after"].forEach(key => {
+                        const keyMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                        if (keyMatch) action[key] = keyMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                    });
+                    actions.push(action);
+                }
+                result["code_actions"] = actions;
+            } else {
+                const partialActionsRegex = /"code_actions"\s*:\s*\[([\s\S]*?)$/;
+                const partialActionsMatch = cleaned.match(partialActionsRegex);
+                if (partialActionsMatch) {
+                    const actionsText = partialActionsMatch[1];
+                    const actions = [];
+                    const objRegex = /\{([\s\S]*?)\}/g;
+                    let objMatch;
+                    let lastIndex = 0;
+                    while ((objMatch = objRegex.exec(actionsText)) !== null) {
+                        const objContent = objMatch[1];
+                        const action = {};
+                        ["title", "reason", "before", "after"].forEach(key => {
+                            const keyMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                            if (keyMatch) action[key] = keyMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                        });
+                        actions.push(action);
+                        lastIndex = objRegex.lastIndex;
+                    }
+                    const trailingText = actionsText.slice(lastIndex);
+                    const trailingObjMatch = trailingText.match(/\{([\s\S]*?)$/);
+                    if (trailingObjMatch) {
+                        const objContent = trailingObjMatch[1];
+                        const action = {};
+                        ["title", "reason", "before", "after"].forEach(key => {
+                            const completeMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                            if (completeMatch) {
+                                action[key] = completeMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            } else {
+                                const partialMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)$`));
+                                if (partialMatch) action[key] = partialMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            }
+                        });
+                        actions.push(action);
+                    }
+                    result["code_actions"] = actions;
+                }
+            }
+
+            return result;
+        };
+
+        const LOCAL_MODELS = [
+          { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Coding-focused option used for developer feedback.' },
+          { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'General-purpose option for explaining errors and fixes.' },
+          { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Alternative local reasoning option for developer feedback.' }
+        ];
+
+        const INDIAN_LANGUAGES = [
+          { code: 'hi-IN', name: 'Hindi' },
+          { code: 'bn-IN', name: 'Bengali' },
+          { code: 'gu-IN', name: 'Gujarati' },
+          { code: 'kn-IN', name: 'Kannada' },
+          { code: 'ml-IN', name: 'Malayalam' },
+          { code: 'mr-IN', name: 'Marathi' },
+          { code: 'od-IN', name: 'Odia' },
+          { code: 'pa-IN', name: 'Punjabi' },
+          { code: 'ta-IN', name: 'Tamil' },
+          { code: 'te-IN', name: 'Telugu' },
+          { code: 'as-IN', name: 'Assamese' },
+          { code: 'brx-IN', name: 'Bodo' },
+          { code: 'doi-IN', name: 'Dogri' },
+          { code: 'kok-IN', name: 'Konkani' },
+          { code: 'ks-IN', name: 'Kashmiri' },
+          { code: 'mai-IN', name: 'Maithili' },
+          { code: 'mni-IN', name: 'Manipuri' },
+          { code: 'ne-IN', name: 'Nepali' },
+          { code: 'sa-IN', name: 'Sanskrit' },
+          { code: 'sat-IN', name: 'Santali' },
+          { code: 'sd-IN', name: 'Sindhi' },
+          { code: 'ur-IN', name: 'Urdu' },
+        ];
+
+        const formatFeedbackForTranslation = (feedback, fallbackSummary = '') => {
+            if (!feedback) return fallbackSummary || '';
+            const parts = [
+                feedback.headline ? `Diagnosis: ${feedback.headline}` : '',
+                feedback.root_cause ? `Deep root cause: ${feedback.root_cause}` : '',
+                feedback.primary_fix ? `Primary fix: ${feedback.primary_fix}` : '',
+                Array.isArray(feedback.evidence) && feedback.evidence.length ? `Evidence:\n${feedback.evidence.map(item => `- ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.fix_steps) && feedback.fix_steps.length ? `Fix plan:\n${feedback.fix_steps.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.prevention) && feedback.prevention.length ? `Prevention:\n${feedback.prevention.map(item => `- ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.debug_questions) && feedback.debug_questions.length ? `Debugging questions:\n${feedback.debug_questions.map(item => `- ${item}`).join('\n')}` : ''
+            ];
+            return parts.filter(Boolean).join('\n\n');
+        };
+
+        const DEFAULT_LAYOUT = {
+            explorerVisible: window.innerWidth > 620,
+            explorerWidth: 224,
+            consoleVisible: true,
+            analysisVisible: false,
+            consoleHeight: 230,
+            analysisWidth: 420
+        };
+
+        const loadLayout = () => {
+            let saved = {};
+            try { saved = JSON.parse(localStorage.getItem('pyglide_layout')) || {}; } catch (e) {}
+            return Object.fromEntries(Object.entries(DEFAULT_LAYOUT).map(([key, fallback]) => [
+                key,
+                typeof fallback === 'boolean'
+                    ? (typeof saved[key] === 'boolean' ? saved[key] : fallback)
+                    : (Number.isFinite(saved[key]) ? Math.max(key === 'analysisWidth' ? 280 : key === 'explorerWidth' ? 160 : 100, Math.min(10000, saved[key])) : fallback)
+            ]));
+        };
+
+        function PaneIcon({ name }) {
+            const paths = {
+                explorer: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></>,
+                console: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18M7 7l3 3-3 3m6 0h4"/></>,
+                analysis: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M6 8h5m-5 4h5m-5 4h3"/></>,
+                close: <path d="m6 6 12 12M6 18 18 6"/>,
+                maximize: <path d="m6 14 6-6 6 6"/>,
+                restore: <path d="m6 10 6 6 6-6"/>,
+                reset: <><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></>
+            };
+            return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+        }
+
+        function ViewportContextMenu({ menu, onClose, children }) {
+            const menuRef = useRef(null);
+            const [position, setPosition] = useState({ left: menu.x, top: menu.y });
+
+            useLayoutEffect(() => {
+                const element = menuRef.current;
+                const viewport = window.visualViewport;
+                const reposition = () => {
+                    const padding = 8;
+                    const leftEdge = (viewport?.offsetLeft || 0) + padding;
+                    const topEdge = (viewport?.offsetTop || 0) + padding;
+                    const width = Math.max(0, (viewport?.width || window.innerWidth) - padding * 2);
+                    const height = Math.max(0, (viewport?.height || window.innerHeight) - padding * 2);
+                    element.style.minWidth = `${Math.min(180, width)}px`;
+                    element.style.maxWidth = `${width}px`;
+                    element.style.maxHeight = `${height}px`;
+                    const bounds = element.getBoundingClientRect();
+                    const left = Math.max(leftEdge, Math.min(menu.x, leftEdge + width - bounds.width));
+                    const top = Math.max(topEdge, Math.min(menu.y, topEdge + height - bounds.height));
+                    setPosition(previous => previous.left === left && previous.top === top ? previous : { left, top });
+                };
+                const onKeyDown = event => { if (event.key === 'Escape') onClose(); };
+                reposition();
+                const observer = new ResizeObserver(reposition);
+                observer.observe(element);
+                window.addEventListener('resize', reposition);
+                viewport?.addEventListener('resize', reposition);
+                viewport?.addEventListener('scroll', reposition);
+                document.addEventListener('keydown', onKeyDown);
+                return () => {
+                    observer.disconnect();
+                    window.removeEventListener('resize', reposition);
+                    viewport?.removeEventListener('resize', reposition);
+                    viewport?.removeEventListener('scroll', reposition);
+                    document.removeEventListener('keydown', onKeyDown);
+                };
+            }, [menu, onClose]);
+
+            return ReactDOM.createPortal(
+                <div ref={menuRef} className="context-menu" style={position}
+                    onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
+                    onClick={event => event.stopPropagation()}>
+                    {children}
+                </div>, document.body
+            );
+        }
+
+        function App() {
+            const [selectedModel, setSelectedModel] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('pyglide_model');
+                    if (LOCAL_MODELS.some(model => model.id === saved)) return saved;
+                } catch (error) {}
+                return 'qwen2.5-coder:1.5b';
+            });
+            const selectedModelRef = useRef(selectedModel);
+            const activeOperationRef = useRef(null);
+            const analysisEpochRef = useRef(0);
+            const translationRequestRef = useRef(null);
+            const runtimeStateRef = useRef({ ready: false, running: false });
+            const [isRunning, setIsRunning] = useState(false);
+            const [engineError, setEngineError] = useState('');
+            useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+            const [files, setFiles] = useState(loadFiles);
+            const [activeId, setActiveId] = useState(() => readStoredValue('pyglide_activeId') || null);
+            const autoOpenInitialRef = useRef(readStoredValue('pyglide_tabs') === null);
+            const [openTabs, setOpenTabs] = useState(loadTabs());
+            const openTabsRef = useRef(openTabs);
+            const filesRef = useRef(files);
+            const [storageError, setStorageError] = useState('');
+            const [examplesError, setExamplesError] = useState('');
+            const [examplesLoading, setExamplesLoading] = useState(true);
+            const examplesRequestRef = useRef(null);
+            const [deleteTarget, setDeleteTarget] = useState(null);
+            const [deletePassword, setDeletePassword] = useState('');
+            const [deleteError, setDeleteError] = useState('');
+            const [isDeleting, setIsDeleting] = useState(false);
+            const deletingRef = useRef(false);
+            const [worker, setWorker] = useState(null);
+            const [engineReady, setEngineReady] = useState(false);
+            
+            const termRef = useRef(null);
+            const termInstance = useRef(null);
+            const fitAddonRef = useRef(null);
+            const currentLineRef = useRef('');
+            const isWaitingForInputRef = useRef(false);
+            const pendingInputUidRef = useRef(null);
+            const isReplRef = useRef(true);
+            const workerRef = useRef(null);
+            const streamAbortControllerRef = useRef(null);
+            const logFileInputRef = useRef(null);
+            
+            const [layout, setLayout] = useState(loadLayout);
+            const [consoleMaximized, setConsoleMaximized] = useState(false);
+            const mainRef = useRef(null);
+            const editorZoneRef = useRef(null);
+            const resizeRef = useRef(null);
+            const analysisToggleRef = useRef(null);
+            const consoleToggleRef = useRef(null);
+
+            const clearAnalysis = () => {
+                analysisEpochRef.current += 1;
+                streamAbortControllerRef.current?.abort();
+                streamAbortControllerRef.current = null;
+                translationRequestRef.current?.abort();
+                setIsTranslating(false);
+                setRca(null);
+            };
+            const togglePane = (pane) => {
+                setLayout(previous => ({ ...previous, [`${pane}Visible`]: !previous[`${pane}Visible`] }));
+                if (pane === 'analysis') setConsoleMaximized(false);
+            };
+            const showAnalysis = () => {
+                setLayout(previous => ({ ...previous, analysisVisible: true }));
+                setConsoleMaximized(false);
+            };
+            const showConsole = () => setLayout(previous => ({ ...previous, consoleVisible: true }));
+            const hidePane = (pane) => {
+                setLayout(previous => ({ ...previous, [`${pane}Visible`]: false }));
+                if (pane === 'console') setConsoleMaximized(false);
+                (pane === 'analysis' ? analysisToggleRef : consoleToggleRef).current?.focus();
+            };
+
+            useEffect(() => {
+                try { localStorage.setItem('pyglide_layout', JSON.stringify(layout)); } catch (e) {}
+            }, [layout]);
+
+            useEffect(() => {
+                const handleLayoutShortcut = (event) => {
+                    if (!(event.ctrlKey || event.metaKey) || event.repeat) return;
+                    const key = event.key.toLowerCase();
+                    const pane = !event.altKey && !event.shiftKey && key === 'b' ? 'explorer'
+                        : !event.altKey && !event.shiftKey && key === 'j' ? 'console'
+                        : event.altKey && !event.shiftKey && key === 'a' ? 'analysis' : null;
+                    if (!pane) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    togglePane(pane);
+                };
+                window.addEventListener('keydown', handleLayoutShortcut, true);
+                return () => window.removeEventListener('keydown', handleLayoutShortcut, true);
+            }, []);
+
+            const paneSizeLimits = (pane) => {
+                if (pane === 'explorer') {
+                    return { min: 160, max: Math.max(160, window.innerWidth <= 620 ? window.innerWidth * .9 : window.innerWidth - 280) };
+                }
+                const bounds = (pane === 'analysis' ? editorZoneRef : mainRef).current?.getBoundingClientRect();
+                const maximum = pane === 'analysis' ? (bounds?.width || window.innerWidth) * .58
+                    : Math.max(80, ((bounds?.height || window.innerHeight) - 52) * .55);
+                return { min: Math.min(pane === 'analysis' ? 280 : 100, maximum), max: maximum };
+            };
+            const setPaneSize = (pane, value) => {
+                const limits = paneSizeLimits(pane);
+                setLayout(previous => ({ ...previous, [pane === 'explorer' ? 'explorerWidth' : pane === 'analysis' ? 'analysisWidth' : 'consoleHeight']:
+                    Math.round(Math.max(limits.min, Math.min(limits.max, value))) }));
+            };
+            const startPaneResize = (event, pane) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                const panel = document.getElementById(pane === 'explorer' ? 'explorer-shell' : pane === 'analysis' ? 'analysis-panel' : 'console-panel');
+                const bounds = panel.getBoundingClientRect();
+                resizeRef.current = { pane, origin: pane !== 'console' ? event.clientX : event.clientY,
+                    size: pane !== 'console' ? bounds.width : bounds.height };
+                event.currentTarget.setPointerCapture(event.pointerId);
+                event.currentTarget.classList.add('is-resizing');
+                document.body.classList.add(`resizing-${pane}`);
+            };
+            const movePaneResize = (event) => {
+                const drag = resizeRef.current;
+                if (drag) {
+                    const delta = (drag.pane !== 'console' ? event.clientX : event.clientY) - drag.origin;
+                    setPaneSize(drag.pane, drag.size + (drag.pane === 'explorer' ? delta : -delta));
+                }
+            };
+            const endPaneResize = (event) => {
+                resizeRef.current = null;
+                event.currentTarget.classList.remove('is-resizing');
+                document.body.classList.remove('resizing-explorer', 'resizing-analysis', 'resizing-console');
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            };
+            const resizeHandleProps = (pane) => {
+                const limits = paneSizeLimits(pane);
+                return {
+                    role: 'separator', tabIndex: 0, 'aria-label': `Resize ${pane} panel`,
+                    'aria-orientation': pane !== 'console' ? 'vertical' : 'horizontal',
+                    'aria-controls': pane === 'explorer' ? 'explorer-panel' : pane === 'analysis' ? 'analysis-panel' : 'console-panel',
+                    'aria-valuemin': Math.round(limits.min), 'aria-valuemax': Math.round(limits.max),
+                    'aria-valuenow': Math.round(Math.min(limits.max, Math.max(limits.min,
+                        pane === 'explorer' ? layout.explorerWidth : pane === 'analysis' ? layout.analysisWidth : layout.consoleHeight))),
+                    title: 'Drag to resize · Arrow keys to adjust · Double-click to reset',
+                    onPointerDown: event => startPaneResize(event, pane), onPointerMove: movePaneResize,
+                    onPointerUp: endPaneResize, onPointerCancel: endPaneResize, onLostPointerCapture: endPaneResize,
+                    onDoubleClick: () => setPaneSize(pane, pane === 'explorer' ? 224 : pane === 'analysis' ? 420 : 230),
+                    onKeyDown: event => {
+                        const keys = pane !== 'console' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+                        if (!keys.includes(event.key)) return;
+                        event.preventDefault();
+                        const bounds = document.getElementById(pane === 'explorer' ? 'explorer-shell' : pane === 'analysis' ? 'analysis-panel' : 'console-panel').getBoundingClientRect();
+                        const direction = event.key === keys[0] ? -1 : 1;
+                        setPaneSize(pane, (pane !== 'console' ? bounds.width : bounds.height) + direction * (pane === 'explorer' ? 20 : -20));
+                    }
+                };
+            };
+
+            const [rca, setRca] = useState(null);
+            const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
+            const [translatedRca, setTranslatedRca] = useState('');
+            const [translationError, setTranslationError] = useState('');
+            const [isTranslating, setIsTranslating] = useState(false);
+            const [view, setView] = useState('editor');
+            const [creatingItem, setCreatingItem] = useState(null);
+            const [newItemName, setNewItemName] = useState('');
+            const [draggedNodeId, setDraggedNodeId] = useState(null);
+            const [dragOverNodeId, setDragOverNodeId] = useState(null);
+            const [editorReady, setEditorReady] = useState(false);
+            const [contextMenu, setContextMenu] = useState(null);
+            const [renamingId, setRenamingId] = useState(null);
+            const renameCommittedRef = useRef(false);
+            const [renamingName, setRenamingName] = useState('');
+            
+            const activeIdRef = useRef(activeId);
+            useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+            useEffect(() => { filesRef.current = files; }, [files]);
+            useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
+
+            const refreshExamples = async () => {
+                if (deletingRef.current) return;
+                examplesRequestRef.current?.abort();
+                const controller = new AbortController();
+                examplesRequestRef.current = controller;
+                setExamplesLoading(true);
+                try {
+                    const response = await fetch(EXAMPLES_API, { cache: 'no-store', signal: controller.signal });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Could not load the example files.');
+                    if (controller.signal.aborted) return;
+                    const next = mergeExampleFiles(filesRef.current, data);
+                    const fileIds = new Set(next.filter(file => file.type === 'file').map(file => file.id));
+                    filesRef.current = next;
+                    setFiles(next);
+                    const validTabs = openTabsRef.current.filter(id => fileIds.has(id));
+                    if (fileIds.has(activeIdRef.current) && !validTabs.includes(activeIdRef.current)) validTabs.push(activeIdRef.current);
+                    setOpenTabs(validTabs);
+                    if (!fileIds.has(activeIdRef.current)) {
+                        const nextId = validTabs[0] || (autoOpenInitialRef.current ? next.find(file => file.type === 'file')?.id : null);
+                        setActiveId(nextId || null);
+                        if (nextId) setOpenTabs(previous => previous.includes(nextId) ? previous : [...previous, nextId]);
+                    }
+                    autoOpenInitialRef.current = false;
+                    setExamplesError('');
+                } catch (error) {
+                    if (error.name !== 'AbortError') setExamplesError('Examples unavailable. Start the backend and retry.');
+                } finally {
+                    if (!controller.signal.aborted) setExamplesLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                refreshExamples();
+                const onFocus = () => refreshExamples();
+                const onStorage = event => {
+                    if (event.key !== 'pyglide_workspace') return;
+                    const next = loadFiles();
+                    if (JSON.stringify(next) === JSON.stringify(filesRef.current)) return;
+                    filesRef.current = next;
+                    setFiles(next);
+                    const fileIds = new Set(next.filter(file => file.type === 'file').map(file => file.id));
+                    setOpenTabs(previous => previous.filter(id => fileIds.has(id)));
+                    if (!fileIds.has(activeIdRef.current)) setActiveId(null);
+                    refreshExamples();
+                };
+                window.addEventListener('focus', onFocus);
+                window.addEventListener('storage', onStorage);
+                return () => {
+                    examplesRequestRef.current?.abort();
+                    window.removeEventListener('focus', onFocus);
+                    window.removeEventListener('storage', onStorage);
+                };
+            }, []);
+            
+            useEffect(() => {
+                try {
+                    localStorage.setItem('pyglide_workspace', JSON.stringify(files));
+                    localStorage.setItem('pyglide_tabs', JSON.stringify(openTabs));
+                    localStorage.setItem('pyglide_activeId', activeId || '');
+                    localStorage.setItem('pyglide_model', selectedModel);
+                    setStorageError('');
+                } catch (error) {
+                    setStorageError('Browser storage is full or unavailable. Download the workspace to keep your changes.');
+                }
+            }, [files, openTabs, activeId, selectedModel]);
+            
+            const [replInput, setReplInput] = useState('');
+
+            const monacoRef = useRef(null);
+            const editorInstance = useRef(null);
+
+            // Refitting on element size changes covers zoom, pane toggles and dragging.
+            useEffect(() => {
+                let frame;
+                const fitWorkspace = () => {
+                    cancelAnimationFrame(frame);
+                    frame = requestAnimationFrame(() => {
+                        const editor = monacoRef.current;
+                        if (editor?.clientWidth && editor.clientHeight) {
+                            editorInstance.current?.layout({ width: editor.clientWidth, height: editor.clientHeight });
+                        }
+                        if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddonRef.current?.fit();
+                    });
+                };
+                const observer = new ResizeObserver(fitWorkspace);
+                [mainRef.current, monacoRef.current, termRef.current].filter(Boolean).forEach(element => observer.observe(element));
+                return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+            }, []);
+
+            useEffect(() => {
+                if (layout.consoleVisible) {
+                    const frame = requestAnimationFrame(() => {
+                        if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddonRef.current?.fit();
+                    });
+                    return () => cancelAnimationFrame(frame);
+                }
+            }, [layout.consoleVisible, consoleMaximized]);
+
+            useEffect(() => {
+                translationRequestRef.current?.abort();
+                translationRequestRef.current = null;
+                setIsTranslating(false);
+                setTranslatedRca('');
+                setTranslationError('');
+            }, [rca?.feedback, rca?.ins, selectedLanguage]);
+
+            const translateGeneratedRca = async (feedback, fallbackSummary = '') => {
+                const text = formatFeedbackForTranslation(feedback, fallbackSummary);
+                if (!text.trim()) {
+                    setTranslationError('No generated RCA text is available to translate yet.');
+                    return;
+                }
+
+                translationRequestRef.current?.abort();
+                const controller = new AbortController();
+                translationRequestRef.current = controller;
+                setIsTranslating(true);
+                setTranslationError('');
+
+                try {
+                    const response = await fetch('http://localhost:8000/translate-feedback', {
+                        method: 'POST',
+                        signal: controller.signal,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text,
+                            target_language_code: selectedLanguage
+                        })
+                    });
+
+                    const data = await response.json().catch(() => ({}));
+                    if (controller.signal.aborted) return;
+                    if (!response.ok) {
+                        throw new Error(data.detail || `Translation failed: ${response.status}`);
+                    }
+
+                    setTranslatedRca(data.translated_text || '');
+                } catch (err) {
+                    if (!controller.signal.aborted) setTranslationError(err.message || String(err));
+                } finally {
+                    if (translationRequestRef.current === controller) setIsTranslating(false);
+                }
+            };
+
+            useEffect(() => {
+                if (window.require && monacoRef.current && !editorInstance.current) {
+                    window.MonacoEnvironment = {
+                        getWorkerUrl: function(workerId, label) {
+                            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                                self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/' };
+                                importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/base/worker/workerMain.js');
+                            `)}`;
+                        }
+                    };
+                    
+                    window.require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+                    window.require(['vs/editor/editor.main'], function() {
+                        window.monaco.editor.defineTheme('pyglide-dark', {
+                            base: 'vs-dark',
+                            inherit: true,
+                            rules: [],
+                            colors: { 'editor.background': '#0f0f11' }
+                        });
+                        editorInstance.current = window.monaco.editor.create(monacoRef.current, {
+                            value: '', 
+                            language: 'python',
+                            theme: 'pyglide-dark',
+                            automaticLayout: true,
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                            fontFamily: "'JetBrains Mono', monospace"
+                        });
+                        
+                        editorInstance.current.onDidChangeModelContent(() => {
+                            if (!editorInstance.current || !activeIdRef.current) return;
+                            const val = editorInstance.current.getValue();
+                            setFiles(prev => prev.map(f => f.id === activeIdRef.current ? { ...f, content: val } : f));
+                        });
+                        
+                        setEditorReady(true);
+                    });
+                }
+            }, []);
+
+            const activeFile = files.find(f => f.id === activeId);
+
+            useEffect(() => {
+                if (editorReady && editorInstance.current && activeFile) {
+                    const currentVal = editorInstance.current.getValue();
+                    if (currentVal !== activeFile.content) {
+                        editorInstance.current.setValue(activeFile.content || '');
+                    }
+                } else if (editorReady && editorInstance.current && !activeFile) {
+                    editorInstance.current.setValue('');
+                }
+            }, [activeId, activeFile, editorReady]);
+
+            const openFile = (id) => {
+                if (!openTabs.includes(id)) setOpenTabs([...openTabs, id]);
+                setActiveId(id);
+            };
+
+            const closeTab = (e, id) => {
+                e.stopPropagation();
+                const newTabs = openTabs.filter(t => t !== id);
+                setOpenTabs(newTabs);
+                if (activeId === id) {
+                    const nextId = newTabs.length > 0 ? newTabs[newTabs.length - 1] : null;
+                    setActiveId(nextId);
+                }
+            };
+
+            const downloadWorkspace = async () => {
+                if (!window.JSZip) return;
+                const zip = new window.JSZip();
+                const addFilesToZip = (parentId, currentFolder) => {
+                    const children = files.filter(f => f.parentId === parentId);
+                    for (const f of children) {
+                        if (f.type === 'folder') {
+                            const newFolder = currentFolder.folder(f.name);
+                            addFilesToZip(f.id, newFolder);
+                        } else {
+                            currentFolder.file(f.name, f.content || "");
+                        }
+                    }
+                };
+                addFilesToZip(null, zip);
+                const blob = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "pyglide_workspace.zip";
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const handleLogFileUpload = async (event) => {
+                const file = event.target.files && event.target.files[0];
+                event.target.value = '';
+                if (!file) return;
+                clearAnalysis();
+                const uploadEpoch = analysisEpochRef.current;
+                const logModel = selectedModelRef.current;
+                showAnalysis();
+                setView('editor');
+
+                const nameLower = file.name.toLowerCase();
+                const isExcel = nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls');
+
+                let logText = '';
+                try {
+                    if (isExcel) {
+                        logText = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const base64 = reader.result.split(',')[1];
+                                resolve(base64);
+                            };
+                            reader.onerror = (e) => reject(e);
+                            reader.readAsDataURL(file);
+                        });
+                    } else {
+                        logText = await file.text();
+                    }
+                } catch (readErr) {
+                    if (uploadEpoch !== analysisEpochRef.current) return;
+                    console.error("File reading error:", readErr);
+                    setRca({
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: '',
+                        frames: [{ line: 1, func: 'log', code: 'Error reading file.' }],
+                        rc: 0,
+                        rawMsg: '',
+                        feedback: null,
+                        llmLoading: false,
+                        mlError: `Error reading file: ${readErr.message || String(readErr)}`,
+                        streamText: '',
+                        ins: {
+                            title: 'Log Debugger',
+                            symptom: 'Failed to read file contents.',
+                            cause: 'A filesystem or permissions error occurred.',
+                            resolution: 'Try uploading the file again.'
+                        }
+                    });
+                    return;
+                }
+
+                if (uploadEpoch !== analysisEpochRef.current) return;
+                if (!logText || !logText.trim()) {
+                    setRca({
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: '',
+                        frames: [{ line: 1, func: 'log', code: 'The uploaded log file is empty.' }],
+                        rc: 0,
+                        rawMsg: '',
+                        feedback: null,
+                        llmLoading: false,
+                        mlError: 'The uploaded log file is empty.',
+                        streamText: '',
+                        ins: {
+                            title: 'Log Debugger',
+                            symptom: 'No log content was available to inspect.',
+                            cause: 'The selected file did not contain readable text.',
+                            resolution: 'Upload a .log, .txt, .out, .err, .trace, .csv, or .xlsx file that contains error output.'
+                        }
+                    });
+                    return;
+                }
+
+                if (streamAbortControllerRef.current) {
+                    try {
+                        streamAbortControllerRef.current.abort();
+                    } catch (e) {}
+                }
+
+                const controller = new AbortController();
+                streamAbortControllerRef.current = controller;
+                setView('editor');
+                setTranslatedRca('');
+                setTranslationError('');
+                setRca({
+                    sourceType: 'log',
+                    sourceModel: logModel,
+                    logFilename: file.name,
+                    logExcerpt: isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600),
+                    frames: [{ line: 1, func: 'log', code: 'Scanning uploaded log for traceback and error signatures...' }],
+                    rc: 0,
+                    rawMsg: isExcel ? 'Excel binary sheet content (Base64)' : logText,
+                    feedback: null,
+                    llmLoading: true,
+                    mlError: null,
+                    streamText: '',
+                    ins: {
+                        title: 'Log Debugger',
+                        symptom: 'Uploaded log is being scanned for the strongest failure signal.',
+                        cause: 'The backend is extracting traceback blocks, severity markers, and exception signatures.',
+                        resolution: 'The selected local Ollama model will explain the root cause after parsing finishes.'
+                    }
+                });
+
+                try {
+                    const analysisResponse = await fetch('http://localhost:8000/log-debug', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            filename: file.name,
+                            log_text: logText,
+                            top_k: 5
+                        })
+                    });
+
+                    const analysis = await analysisResponse.json().catch(() => ({}));
+                    if (controller.signal.aborted) return;
+                    if (!analysisResponse.ok) {
+                        throw new Error(analysis.detail || `Log analysis failed: ${analysisResponse.status}`);
+                    }
+
+                    if (analysis.no_error_detected) {
+                        setRca({
+                            sourceType: 'log',
+                            logFilename: file.name,
+                            logExcerpt: isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600),
+                            frames: [],
+                            rc: 0,
+                            rawMsg: analysis.parsed_log_text || logText,
+                            feedback: {
+                                headline: 'No errors detected',
+                                root_cause: 'The uploaded file does not contain any recognizable error tracebacks, exception signatures, or log severity markers (like ERROR or CRITICAL).',
+                                evidence: [
+                                    'Scanned all lines/cells for typical python tracebacks ("Traceback (most recent call last):").',
+                                    'Scanned all lines/cells for standard Exception/Error name patterns.',
+                                    'Scanned for severity level markers (ERROR, CRITICAL, FATAL, SEVERE).'
+                                ],
+                                fix_steps: [
+                                    'Ensure you are uploading the correct log file that captured the error event.',
+                                    'If this is a data spreadsheet (CSV/Excel), please note that the Log Debugger is designed to parse execution and system logs rather than standard tabular datasets.'
+                                ]
+                            },
+                            llmLoading: false,
+                            mlError: null,
+                            ins: {
+                                title: 'No Failure Signatures Found',
+                                symptom: 'The log/dataset was parsed successfully, but no error or exception signatures were identified.',
+                                cause: 'The file appears to be a healthy execution log or a standard data spreadsheet without runtime errors.',
+                                resolution: 'Please upload a log file that contains an active exception or error message.'
+                            }
+                        });
+                        return;
+                    }
+
+                    const errorDetails = analysis.error || {};
+                    const parsedLogText = analysis.parsed_log_text || logText;
+                    const stackFrames = Array.isArray(errorDetails.call_stack) && errorDetails.call_stack.length
+                        ? errorDetails.call_stack.map((frame) => ({
+                            line: frame.line_number || errorDetails.log_line_number || 1,
+                            func: frame.function || errorDetails.failing_function || 'log',
+                            code: frame.file || file.name
+                        }))
+                        : [{
+                            line: errorDetails.log_line_number || errorDetails.line_number || 1,
+                            func: errorDetails.failing_function || 'log',
+                            code: (errorDetails.message || analysis.log_excerpt || 'Log failure signal').slice(0, 220)
+                        }];
+
+                    setRca((prev) => ({
+                        ...(prev || {}),
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: analysis.log_excerpt || (isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600)),
+                        frames: stackFrames,
+                        rc: Math.max(0, stackFrames.length - 1),
+                        rawMsg: errorDetails.traceback || parsedLogText,
+                        parsedError: errorDetails,
+                        semanticMatches: analysis.semantic_matches || [],
+                        ins: {
+                            title: errorDetails.type || 'Log Failure',
+                            symptom: `Detected ${errorDetails.type || 'a log failure'}${errorDetails.message ? `: ${errorDetails.message}` : ''}`,
+                            cause: analysis.root_cause_analysis || 'The log parser found an error signal but needs LLM reasoning for deeper context.',
+                            resolution: analysis.suggested_fix || 'Review the highlighted log context and verify the failing service/component.'
+                        }
+                    }));
+
+                    const streamResponse = await fetch('http://localhost:8000/stream-feedback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            error: errorDetails,
+                            rca: analysis.rca,
+                            similar_bugs: analysis.semantic_matches || [],
+                            source_code: parsedLogText,
+                            model: logModel
+                        })
+                    });
+
+                    if (!streamResponse.ok) throw new Error(`Stream connection failed: ${streamResponse.status}`);
+                    if (!streamResponse.body) throw new Error('ReadableStream not supported');
+
+                    const reader = streamResponse.body.getReader();
+                    const decoder = new TextDecoder();
+                    let accumulatedText = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done || controller.signal.aborted) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        accumulatedText += chunk;
+
+                        if (accumulatedText.includes('[METADATA_SEPARATOR]')) {
+                            const parts = accumulatedText.split('[METADATA_SEPARATOR]');
+                            const streamingText = parts[0];
+                            const jsonText = parts[1];
+                            let finalFeedback = parsePartialJSON(streamingText);
+
+                            if (jsonText.trim()) {
+                                try {
+                                    const parsed = JSON.parse(jsonText.trim());
+                                    const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+                                    const codeActs = ensureArray(parsed.code_actions);
+                                    const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
+                                    const codeSuggestion = action
+                                        ? [
+                                            action.before ? `Current:\n${action.before}` : '',
+                                            action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                          ].filter(Boolean).join('\n')
+                                        : '';
+
+                                    finalFeedback = {
+                                        headline: finalFeedback.headline || parsed.headline || '',
+                                        root_cause: finalFeedback.root_cause || parsed.root_cause || '',
+                                        primary_fix: finalFeedback.primary_fix || parsed.primary_fix || '',
+                                        confidence: parsed.confidence || 0,
+                                        evidence: ensureArray(finalFeedback.evidence?.length ? finalFeedback.evidence : parsed.evidence),
+                                        fix_steps: ensureArray(finalFeedback.fix_steps?.length ? finalFeedback.fix_steps : parsed.fix_steps),
+                                        prevention: ensureArray(finalFeedback.prevention?.length ? finalFeedback.prevention : parsed.prevention),
+                                        debug_questions: ensureArray(finalFeedback.debug_questions?.length ? finalFeedback.debug_questions : parsed.debug_questions),
+                                        code_actions: codeActs,
+                                        codeSuggestion
+                                    };
+                                } catch (e) {}
+                            }
+
+                            setRca(p => p ? {
+                                ...p,
+                                streamText: streamingText,
+                                feedback: finalFeedback
+                            } : p);
+                        } else {
+                            setRca(p => p ? { ...p, streamText: accumulatedText } : p);
+                        }
+                    }
+                } catch (err) {
+                    if (err.name === 'AbortError' || controller.signal.aborted) return;
+                    setRca(p => p ? {
+                        ...p,
+                        llmLoading: false,
+                        mlError: `Log debugger unavailable: ${err.message || String(err)}`
+                    } : p);
+                } finally {
+                    if (controller.signal.aborted) return;
+                    setRca(p => {
+                        if (!p) return p;
+                        const finalFb = p.feedback || parsePartialJSON(p.streamText);
+                        return { ...p, feedback: finalFb, llmLoading: false };
+                    });
+                }
+            };
+
+            // Initialize Xterm.js
+            useEffect(() => {
+                console.log("XTERM SETUP TRIGGERED");
+                console.log("window.Terminal:", !!window.Terminal, "termRef.current:", !!termRef.current);
+                try {
+                    if (!termInstance.current && termRef.current && window.Terminal) {
+                        console.log("INITIALIZING XTERM INSTANCE...");
+                        const term = new window.Terminal({
+                            theme: { background: '#070708', foreground: '#e2e8f0', cursor: '#3b82f6' },
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 13,
+                            cursorBlink: true
+                        });
+                        let fitAddon = null;
+                        if (window.FitAddon) {
+                            if (typeof window.FitAddon.FitAddon === 'function') {
+                                fitAddon = new window.FitAddon.FitAddon();
+                            } else if (typeof window.FitAddon === 'function') {
+                                fitAddon = new window.FitAddon();
+                            }
+                        }
+                        if (fitAddon) {
+                            fitAddonRef.current = fitAddon;
+                            term.loadAddon(fitAddon);
+                        }
+                        term.open(termRef.current);
+                        
+                        // Delay fit slightly to ensure container is sized
+                        if (fitAddon) {
+                            setTimeout(() => {
+                                if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddon.fit();
+                            }, 100);
+                        }
+                        
+                        termInstance.current = term;
+
+                        term.write('PYGLIDE SYSTEM CONSOLE\r\n');
+                        term.write('>>> ');
+
+                        term.onData(e => {
+                            if (!runtimeStateRef.current.ready && !isWaitingForInputRef.current) return;
+                            if (!isWaitingForInputRef.current && !isReplRef.current) return;
+
+                            switch (e) {
+                                case '\r': // Enter
+                                    term.write('\r\n');
+                                    const code = currentLineRef.current;
+                                    currentLineRef.current = '';
+                                    if (isWaitingForInputRef.current) {
+                                        isWaitingForInputRef.current = false;
+                                        provideInput(code);
+                                    } else if (isReplRef.current) {
+                                        handleReplEnter(code);
+                                    }
+                                    break;
+                                case '\u007F': // Backspace
+                                    if (currentLineRef.current.length > 0) {
+                                        currentLineRef.current = currentLineRef.current.slice(0, -1);
+                                        term.write('\b \b');
+                                    }
+                                    break;
+                                default:
+                                    if ((e >= String.fromCharCode(0x20) && e <= String.fromCharCode(0x7E)) || e.length >= 2) {
+                                        currentLineRef.current += e;
+                                        term.write(e);
+                                    }
+                            }
+                        });
+                        
+                    }
+                } catch (e) {
+                    console.error("XTERM INIT ERROR:", e);
+                }
+            }, []);
+
+            const rebootWorker = (fromRun = false, preserveConsole = false) => {
+                if (workerRef.current) {
+                    workerRef.current.terminate();
+                }
+                isWaitingForInputRef.current = false;
+                pendingInputUidRef.current = null;
+                isReplRef.current = !fromRun;
+                currentLineRef.current = '';
+                
+                if (termInstance.current && !preserveConsole) {
+                    termInstance.current.clear();
+                    termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n');
+                    termInstance.current.write('Loading Python runtime...\r\n');
+                }
+                
+                setEngineReady(false);
+                setEngineError('');
+                runtimeStateRef.current.ready = false;
+                const w = new Worker('/pyworker.js?t=' + Date.now());
+                w.onmessage = (e) => {
+                    if (workerRef.current !== w) return;
+                    const { type, msg, uid, id, error, result } = e.data;
+                    if (type === 'ready') {
+                        runtimeStateRef.current.ready = true;
+                        setEngineReady(true);
+                        setEngineError('');
+                        if (isReplRef.current) termInstance.current?.write('>>> ');
+                        return;
+                    }
+                    if (type === 'init_error') {
+                        runtimeStateRef.current.ready = false;
+                        runtimeStateRef.current.running = false;
+                        setEngineReady(false);
+                        setIsRunning(false);
+                        setEngineError(error || 'Python runtime could not be loaded.');
+                        termInstance.current?.write(`\r\nPython runtime unavailable: ${error}\r\n`);
+                        return;
+                    }
+                    if (type === 'stdout' || type === 'stderr') {
+                        if (termInstance.current) {
+                            const colorPrefix = type === 'stderr' ? '\x1b[31m' : '';
+                            const colorSuffix = type === 'stderr' ? '\x1b[0m' : '';
+                            termInstance.current.write(colorPrefix + msg.replace(/\n/g, '\r\n') + colorSuffix);
+                        }
+                    } else if (type === 'done' || type === 'error') {
+                        runtimeStateRef.current.running = false;
+                        setIsRunning(false);
+                        if (type === 'error' && termInstance.current) {
+                            termInstance.current.write('\x1b[31m' + error.replace(/\n/g, '\r\n') + '\x1b[0m\r\n');
+                        }
+                        if (type === 'done' && result !== undefined && termInstance.current) {
+                            termInstance.current.write(String(result).replace(/\n/g, '\r\n') + '\r\n');
+                        }
+                        
+                        if (id === 'run_main' || id?.startsWith('repl_')) {
+                            if (termInstance.current) termInstance.current.write('>>> ');
+                            isReplRef.current = true;
+                            if (type === 'done' && id === 'run_main' && activeOperationRef.current?.epoch === analysisEpochRef.current) {
+                                setRca(null);
+                            }
+                        }
+
+                        if (type === 'error') {
+                            const operation = activeOperationRef.current;
+                            if (!operation || operation.epoch !== analysisEpochRef.current) return;
+                            showAnalysis();
+                            const currentCode = operation.code;
+                            const base = analyze(error, currentCode);
+
+                            if (streamAbortControllerRef.current) {
+                                try {
+                                    streamAbortControllerRef.current.abort();
+                                } catch (e) {}
+                            }
+                            const controller = new AbortController();
+                            streamAbortControllerRef.current = controller;
+
+                            setRca({
+                                ...base,
+                                sourceFilename: operation.filename,
+                                sourceModel: operation.model,
+                                feedback: null,
+                                llmLoading: true,
+                                mlError: null,
+                                streamText: ''
+                            });
+
+                            const excType = extractExceptionType(error);
+                            const excMsg = extractExceptionMessage(error);
+
+                            fetch('http://localhost:8000/stream-feedback', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                signal: controller.signal,
+                                body: JSON.stringify({
+                                    error: {
+                                        type: excType,
+                                        message: excMsg,
+                                        traceback: error,
+                                        line_number: base.frames.length > 0 ? base.frames[base.rc].line : -1,
+                                        failing_function: base.frames.length > 0 ? base.frames[base.rc].func : ""
+                                    },
+                                    rca: null,
+                                    similar_bugs: null,
+                                    source_code: currentCode,
+                                    model: operation.model
+                                })
+                            }).then(async (streamResponse) => {
+                                if (controller.signal.aborted) return;
+                                if (!streamResponse.ok) throw new Error(`Stream connection failed: ${streamResponse.status}`);
+                                if (!streamResponse.body) throw new Error('ReadableStream not supported');
+
+                                const reader = streamResponse.body.getReader();
+                                const decoder = new TextDecoder();
+                                let accumulatedText = '';
+
+                                while (true) {
+                                    const { done, value } = await reader.read();
+                                    if (done || controller.signal.aborted) break;
+
+                                    const chunk = decoder.decode(value, { stream: true });
+                                    accumulatedText += chunk;
+
+                                    if (accumulatedText.includes('[METADATA_SEPARATOR]')) {
+                                        const parts = accumulatedText.split('[METADATA_SEPARATOR]');
+                                        const streamingText = parts[0];
+                                        const jsonText = parts[1];
+
+                                        let finalFeedback = parsePartialJSON(streamingText);
+                                        
+                                        if (jsonText.trim()) {
+                                            try {
+                                                const parsed = JSON.parse(jsonText.trim());
+                                                const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+                                                const codeActs = ensureArray(parsed.code_actions);
+                                                const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
+                                                const codeSuggestion = action
+                                                    ? [
+                                                        action.before ? `Current:\n${action.before}` : '',
+                                                        action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                                      ].filter(Boolean).join('\n')
+                                                    : '';
+                                                
+                                                finalFeedback = {
+                                                     headline: finalFeedback.headline || parsed.headline || '',
+                                                     root_cause: finalFeedback.root_cause || parsed.root_cause || '',
+                                                     primary_fix: finalFeedback.primary_fix || parsed.primary_fix || '',
+                                                     confidence: parsed.confidence || 0,
+                                                     evidence: ensureArray(finalFeedback.evidence?.length ? finalFeedback.evidence : parsed.evidence),
+                                                     fix_steps: ensureArray(finalFeedback.fix_steps?.length ? finalFeedback.fix_steps : parsed.fix_steps),
+                                                     prevention: ensureArray(finalFeedback.prevention?.length ? finalFeedback.prevention : parsed.prevention),
+                                                     debug_questions: ensureArray(finalFeedback.debug_questions?.length ? finalFeedback.debug_questions : parsed.debug_questions),
+                                                     code_actions: codeActs,
+                                                     codeSuggestion
+                                                 };
+                                            } catch (e) {
+                                                // Silent catch: waiting for full JSON chunk
+                                            }
+                                        }
+                                        
+                                        setRca(p => p ? {
+                                            ...p,
+                                            streamText: streamingText,
+                                            feedback: finalFeedback,
+                                            ins: p.ins
+                                        } : p);
+                                    } else {
+                                        setRca(p => p ? { ...p, streamText: accumulatedText } : p);
+                                    }
+                                }
+                            }).catch((err) => {
+                                if (err.name === 'AbortError' || controller.signal.aborted) return;
+                                setRca(p => p ? {
+                                    ...p,
+                                    llmLoading: false,
+                                    mlError: `Local ML backend unavailable: ${err.message}`
+                                } : p);
+                            }).finally(() => {
+                                if (controller.signal.aborted) return;
+                                setRca(p => {
+                                    if (!p) return p;
+                                    const finalFb = p.feedback || parsePartialJSON(p.streamText);
+                                    return { ...p, feedback: finalFb, llmLoading: false };
+                                });
+                            });
+                        }
+                    }
+                };
+                
+                setWorker(w);
+                workerRef.current = w;
+                w.onerror = event => {
+                    if (workerRef.current !== w) return;
+                    runtimeStateRef.current = { ready: false, running: false };
+                    setEngineReady(false);
+                    setIsRunning(false);
+                    setEngineError(event.message || 'Python worker failed.');
+                    event.preventDefault();
+                };
+            };
+
+            // Initialize Service Worker and Web Worker
+            useEffect(() => {
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('/sw.js').then(() => {
+                        if (!workerRef.current) {
+                            rebootWorker();
+                        }
+                        if (!navigator.serviceWorker.controller) {
+                            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                                if (!workerRef.current) rebootWorker();
+                            });
+                        }
+                    }).catch(err => {
+                        console.error("SW Registration failed:", err);
+                        rebootWorker(); // Fallback
+                    });
+                    
+                    navigator.serviceWorker.addEventListener('message', (event) => {
+                        if (event.data && event.data.type === 'input_requested') {
+                            if (!runtimeStateRef.current.running) return;
+                            showConsole();
+                            pendingInputUidRef.current = event.data.uid;
+                            isWaitingForInputRef.current = true;
+                            isReplRef.current = false;
+                        }
+                    });
+                } else {
+                    rebootWorker();
+                }
+
+                return () => { if (workerRef.current) workerRef.current.terminate(); };
+            }, []);
+
+            const provideInput = async (value) => {
+                if (!pendingInputUidRef.current) return;
+                
+                const formData = new FormData();
+                formData.append('uid', pendingInputUidRef.current);
+                formData.append('value', value);
+                
+                pendingInputUidRef.current = null;
+                
+                await fetch('/__pyglide_provide_input__', {
+                    method: 'POST',
+                    body: formData
+                });
+            };
+
+            const run = async () => {
+                if (!editorInstance.current || !runtimeStateRef.current.ready || runtimeStateRef.current.running) return;
+                clearAnalysis();
+                showConsole();
+                setConsoleMaximized(false);
+                const currentCode = editorInstance.current.getValue() || '';
+                activeOperationRef.current = { code: currentCode, filename: filesRef.current.find(file => file.id === activeIdRef.current)?.name || 'Untitled.py', model: selectedModelRef.current, epoch: analysisEpochRef.current };
+                runtimeStateRef.current.running = true;
+                setIsRunning(true);
+                
+                
+                rebootWorker(true);
+                
+                isReplRef.current = false;
+                isWaitingForInputRef.current = false;
+                currentLineRef.current = '';
+                
+                workerRef.current.postMessage({ type: 'run', id: 'run_main', code: currentCode });
+            };
+            
+            const handleReplEnter = async (code) => {
+                if (!workerRef.current) return;
+                const trimmed = code.trim();
+                if (!trimmed) {
+                    if (termInstance.current) termInstance.current.write('>>> ');
+                    return;
+                }
+                
+                isReplRef.current = false;
+                activeOperationRef.current = { code: trimmed, filename: 'Console', model: selectedModelRef.current, epoch: analysisEpochRef.current };
+                runtimeStateRef.current.running = true;
+                setIsRunning(true);
+                workerRef.current.postMessage({ type: 'repl', id: 'repl_' + Date.now(), code: trimmed });
+            };
+
+            const stopRuntime = () => {
+                if (pendingInputUidRef.current) provideInput('').catch(() => {});
+                activeOperationRef.current = null;
+                runtimeStateRef.current.running = false;
+                setIsRunning(false);
+                termInstance.current?.write('\r\nExecution stopped.\r\n');
+                rebootWorker(false, true);
+            };
+
+
+
+            const toggleFolder = (id) => {
+                setFiles(prev => prev.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f));
+            };
+
+            const confirmCreateItem = () => {
+                if (!newItemName.trim() || !creatingItem) {
+                    setCreatingItem(null);
+                    return;
+                }
+                let finalName = newItemName.trim();
+                if (creatingItem.type === 'file' && !finalName.toLowerCase().endsWith('.py')) finalName += '.py';
+                if (!validWorkspaceName(finalName)) { alert('Use a valid file or folder name.'); return; }
+                
+                const parentId = creatingItem.parentId ?? (creatingItem.type === 'file' ? WORKSPACE_FOLDER_ID : null);
+                const isDuplicate = files.some(f => f.parentId === parentId && f.name.toLowerCase() === finalName.toLowerCase());
+                if (isDuplicate) {
+                    alert(`An item named "${finalName}" already exists in this folder.`);
+                    return;
+                }
+
+                const newId = `user-${crypto.randomUUID()}`;
+                const newItem = { 
+                    id: newId, 
+                    name: finalName, 
+                    type: creatingItem.type,
+                    parentId,
+                    ...(creatingItem.type === 'file' ? { content: '' } : { isOpen: true })
+                };
+                
+                const base = parentId === WORKSPACE_FOLDER_ID && !files.some(file => file.id === WORKSPACE_FOLDER_ID)
+                    ? [...files, { id: WORKSPACE_FOLDER_ID, name: 'workspace', type: 'folder', parentId: null, isOpen: true }] : files;
+                setFiles([...base.map(file => file.id === parentId ? { ...file, isOpen: true } : file), newItem]);
+                if (creatingItem.type === 'file') openFile(newId);
+                setCreatingItem(null);
+                setNewItemName('');
+            };
+
+            const handleNewItemKeyDown = (e) => {
+                if (e.key === 'Enter') confirmCreateItem();
+                else if (e.key === 'Escape') setCreatingItem(null);
+            };
+
+            const handleDragStart = (e, id) => {
+                e.dataTransfer.setData('text/plain', id);
+                setDraggedNodeId(id);
+                e.stopPropagation();
+            };
+
+            const handleDrop = (e, dropId) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverNodeId(null);
+                setDraggedNodeId(null);
+                
+                const dragId = e.dataTransfer.getData('text/plain');
+                if (!dragId || dragId === dropId) return;
+
+                const isDescendant = (childId, parentId) => {
+                    let current = files.find(f => f.id === childId);
+                    while (current && current.parentId) {
+                        if (current.parentId === parentId) return true;
+                        current = files.find(f => f.id === current.parentId);
+                    }
+                    return false;
+                };
+
+                if (dropId !== null && isDescendant(dropId, dragId)) {
+                    alert("Cannot move a folder into its own subfolder.");
+                    return;
+                }
+
+                setFiles(prev => {
+                    const newFiles = prev.map(file => ({ ...file }));
+                    const dragIndex = newFiles.findIndex(f => f.id === dragId);
+                    if (dragIndex === -1) return prev;
+                    
+                    const dragNode = newFiles[dragIndex];
+                    let targetParentId = null;
+                    let dropIndex = -1;
+
+                    if (dropId !== null) {
+                        const dropNode = newFiles.find(f => f.id === dropId);
+                        if (!dropNode) return prev;
+                        if (dropNode.type === 'folder') {
+                            targetParentId = dropId;
+                        } else {
+                            targetParentId = dropNode.parentId;
+                            dropIndex = newFiles.findIndex(f => f.id === dropId);
+                        }
+                    }
+
+                    const duplicate = newFiles.some(f => f.id !== dragId && f.parentId === targetParentId && f.name === dragNode.name);
+                    if (duplicate) {
+                        alert(`An item named "${dragNode.name}" already exists in the destination.`);
+                        return prev;
+                    }
+
+                    dragNode.parentId = targetParentId;
+                    newFiles.splice(dragIndex, 1);
+
+                    if (dropIndex !== -1) {
+                        // Adjust index if we removed an item before it
+                        if (dragIndex < dropIndex) dropIndex--;
+                        newFiles.splice(dropIndex, 0, dragNode);
+                    } else {
+                        newFiles.push(dragNode);
+                        if (dropId !== null) {
+                            const dropNode = newFiles.find(f => f.id === dropId);
+                            if (dropNode) dropNode.isOpen = true;
+                        }
+                    }
+                    return newFiles;
+                });
+            };
+
+            const handleDeleteFile = (e, id) => {
+                e.stopPropagation();
+                const target = files.find(file => file.id === id);
+                if (!target) return;
+                const ids = subtreeIds(id, files);
+                if (target.isExamplesFolder) files.forEach(file => { if (file.examplePath) ids.add(file.id); });
+                const selected = files.filter(file => ids.has(file.id));
+                setDeleteTarget({ id, name: target.name, ids: [...ids],
+                    filenames: selected.filter(file => file.examplePath).map(file => file.examplePath),
+                    deleteFolder: Boolean(target.isExamplesFolder),
+                    requiresPassword: selected.some(file => file.isPredefined),
+                    fileCount: selected.filter(file => file.type === 'file').length });
+                setDeletePassword('');
+                setDeleteError('');
+                setContextMenu(null);
+            };
+
+            const cancelDeletion = () => {
+                if (isDeleting) return;
+                setDeleteTarget(null);
+                setDeletePassword('');
+                setDeleteError('');
+            };
+
+            const confirmDeletion = async (event) => {
+                event.preventDefault();
+                if (!deleteTarget || isDeleting) return;
+                deletingRef.current = true;
+                setIsDeleting(true);
+                setDeleteError('');
+                examplesRequestRef.current?.abort();
+                try {
+                    let deletedNames = [];
+                    if (deleteTarget.filenames.length || deleteTarget.deleteFolder) {
+                        const response = await fetch(`${EXAMPLES_API}/delete`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filenames: deleteTarget.filenames,
+                                password: deleteTarget.requiresPassword ? deletePassword : undefined,
+                                delete_folder: deleteTarget.deleteFolder })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                            if (response.status === 403) setDeleteTarget(previous => previous ? { ...previous, requiresPassword: true } : previous);
+                            throw new Error(data.detail || 'The files could not be deleted.');
+                        }
+                        deletedNames = data.deleted || [];
+                    }
+                    const ids = new Set(deleteTarget.ids);
+                    filesRef.current.forEach(file => { if (deletedNames.includes(file.examplePath)) ids.add(file.id); });
+                    const next = filesRef.current.filter(file => !ids.has(file.id));
+                    filesRef.current = next;
+                    // Persist immediately so deleted entries cannot return on reload.
+                    localStorage.setItem('pyglide_workspace', JSON.stringify(next));
+                    setFiles(next);
+                    const tabs = openTabsRef.current.filter(id => !ids.has(id));
+                    setOpenTabs(tabs);
+                    localStorage.setItem('pyglide_tabs', JSON.stringify(tabs));
+                    if (ids.has(activeIdRef.current)) setActiveId(tabs[0] || null);
+                    setDeleteTarget(null);
+                    setDeletePassword('');
+                } catch (error) {
+                    setDeleteError(error.message || 'Deletion failed. Start the backend and try again.');
+                } finally {
+                    deletingRef.current = false;
+                    setIsDeleting(false);
+                    setExamplesLoading(false);
+                }
+            };
+
+            const handleContextMenu = (e, file) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContextMenu({ x: e.clientX, y: e.clientY, file });
+            };
+
+            const closeContextMenu = () => {
+                if (contextMenu) setContextMenu(null);
+            };
+
+            useEffect(() => {
+                document.addEventListener('click', closeContextMenu);
+                return () => document.removeEventListener('click', closeContextMenu);
+            }, [contextMenu]);
+
+            const handleDuplicate = (id) => {
+                const target = files.find(file => file.id === id);
+                if (!target) return;
+                const ids = subtreeIds(id, files);
+                const mapping = new Map([...ids].map(key => [key, `user-${crypto.randomUUID()}`]));
+                const copyName = uniqueCopyName(target.name, files.filter(file => file.parentId === target.parentId).map(file => file.name));
+                const copies = files.filter(file => ids.has(file.id)).map(file => {
+                    const { examplePath, isPredefined, isExamplesFolder, sourceContent, ...ordinaryFile } = file;
+                    return { ...ordinaryFile, id: mapping.get(file.id), name: file.id === id ? copyName : file.name,
+                        parentId: file.id === id ? target.parentId : mapping.get(file.parentId),
+                        ...(file.type === 'folder' ? { isOpen: true } : {}) };
+                });
+                setFiles(previous => [...previous, ...copies]);
+                setContextMenu(null);
+            };
+
+            const handleRenameStart = (id) => {
+                const target = files.find(f => f.id === id);
+                if (target) {
+                    renameCommittedRef.current = false;
+                    setRenamingId(id);
+                    setRenamingName(target.name);
+                }
+                setContextMenu(null);
+            };
+
+            const handleRenameSubmit = (id) => {
+                if (renameCommittedRef.current) return;
+                renameCommittedRef.current = true;
+                const target = files.find(file => file.id === id);
+                const name = renamingName.trim();
+                if (target && name !== target.name) {
+                    if (!validWorkspaceName(name) || files.some(file => file.id !== id && file.parentId === target.parentId && file.name.toLowerCase() === name.toLowerCase())) {
+                        setRenamingId(null);
+                        alert('Use a valid, unique name within this folder.');
+                        return;
+                    }
+                    setFiles(previous => previous.map(file => file.id === id ? { ...file, name } : file));
+                }
+                setRenamingId(null);
+            };
+
+            const renderTree = (parentId, level = 0) => {
+                const nodes = files.filter(f => f.parentId === parentId);
+                const children = nodes.map(f => {
+                    const isDragOver = dragOverNodeId === f.id;
+                    const styleBase = { 
+                        paddingLeft: `${10 + level * 15}px`, 
+                        border: isDragOver ? '1px dashed var(--accent)' : '1px solid transparent',
+                        background: isDragOver ? 'var(--accent-dim)' : ''
+                    };
+                    
+                    if (f.type === 'folder') {
+                        return (
+                            <div key={f.id}>
+                                <div className="file-item" 
+                                    style={{ ...styleBase, display: 'flex', justifyContent: 'space-between', fontWeight: 600 }} 
+                                    onClick={() => toggleFolder(f.id)}
+                                    onContextMenu={(e) => handleContextMenu(e, f)}
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, f.id)}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
+                                    onDragLeave={() => setDragOverNodeId(null)}
+                                    onDrop={(e) => handleDrop(e, f.id)}
+                                >
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{minWidth: '14px'}}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                        {renamingId === f.id ? (
+                                            <input 
+                                                autoFocus 
+                                                value={renamingName} 
+                                                onChange={e => setRenamingName(e.target.value)} 
+                                                onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') { renameCommittedRef.current = true; setRenamingId(null); } }}
+                                                onBlur={() => handleRenameSubmit(f.id)} 
+                                                style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                                            />
+                                        ) : (
+                                            <span className="file-name-text" onContextMenu={(e) => handleContextMenu(e, f)}>{f.name}</span>
+                                        )}
+                                    </span>
+                                </div>
+                                {f.isOpen && renderTree(f.id, level + 1)}
+                            </div>
+                        );
+                    } else {
+                        return (
+                            <div key={f.id} 
+                                className={`file-item ${activeId === f.id ? 'active' : ''}`} 
+                                style={styleBase} 
+                                onClick={() => openFile(f.id)}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, f.id)}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
+                                onDragLeave={() => setDragOverNodeId(null)}
+                                onDrop={(e) => handleDrop(e, f.id)}
+                                onContextMenu={(e) => handleContextMenu(e, f)}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{minWidth: '14px'}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                    {renamingId === f.id ? (
+                                        <input 
+                                            autoFocus 
+                                            value={renamingName} 
+                                            onChange={e => setRenamingName(e.target.value)} 
+                                            onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') { renameCommittedRef.current = true; setRenamingId(null); } }}
+                                            onBlur={() => handleRenameSubmit(f.id)} 
+                                            style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                                        />
+                                    ) : (
+                                        <span className="file-name-text">{f.name}</span>
+                                    )}
+                                </span>
+                            </div>
+                        );
+                    }
+                });
+
+                if (creatingItem && creatingItem.parentId === parentId) {
+                    children.push(
+                        <div key="new-item" className="file-item" style={{ paddingLeft: `${10 + level * 15}px`, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {creatingItem.type === 'folder' 
+                                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            }
+                            <input 
+                                autoFocus 
+                                value={newItemName} 
+                                onChange={e => setNewItemName(e.target.value)} 
+                                onKeyDown={handleNewItemKeyDown} 
+                                onBlur={() => setCreatingItem(null)} 
+                                placeholder={creatingItem.type === 'folder' ? "folder_name" : "file_name.py"} 
+                                style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                            />
+                        </div>
+                    );
+                }
+                return children;
+            };
+
+            return (
+                <div className="layout" style={{ '--explorer-width': `${layout.explorerWidth}px`, '--analysis-width': `${layout.analysisWidth}px`, '--console-height': `${layout.consoleHeight}px` }}>
+                    <input
+                        ref={logFileInputRef}
+                        className="log-upload-input"
+                        type="file"
+                        accept=".log,.txt,.out,.err,.trace,.csv,.xlsx,.xls"
+                        onChange={handleLogFileUpload}
+                    />
+                    {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
+                    {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} selectedModel={selectedModel} onSelect={setSelectedModel} />}
+                    <div className="explorer-shell" id="explorer-shell" hidden={!layout.explorerVisible}>
+                    <aside className="sidebar" id="explorer-panel" aria-label="Explorer">
+                        <div className="explorer-heading"><div className="logo" style={{marginBottom: 0}}>PYGLIDE</div><button className="panel-action" aria-label="Hide explorer" title="Hide Explorer (Ctrl+B)" onClick={() => togglePane('explorer')}><PaneIcon name="close"/></button></div>
+                        
+                        <div style={{display:'flex', flexDirection:'column', gap:'10px', padding:'0 10px', marginBottom:'2rem'}}>
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('stats')} title="View Programmer Focus Analytics">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                                PROGRAMMER FOCUS
+                            </button>
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title="View Local Model Guide">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                                MODEL GUIDE
+                            </button>
+                            <div style={{display:'flex', flexDirection:'column', gap:'4px', width:'100%'}}>
+                                <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace, .csv, .xlsx)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+                                    LOG DEBUGGER
+                                </button>
+                                <span style={{fontSize:'0.6rem', color:'var(--text-dim)', paddingLeft:'28px', opacity:0.75, fontStyle:'italic'}}>
+                                    Accepts: .log, .txt, .out, .err, .trace, .csv, .xlsx
+                                </span>
+                            </div>
+                        </div>
+
+                        <div
+                            className="explorer-tools"
+                            style={{
+                                display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', paddingLeft:'10px', paddingRight:'10px',
+                                border: dragOverNodeId === 'root' ? '1px dashed var(--accent)' : '1px solid transparent',
+                                background: dragOverNodeId === 'root' ? 'var(--accent-dim)' : ''
+                            }}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId('root'); }}
+                            onDragLeave={() => setDragOverNodeId(null)}
+                            onDrop={(e) => handleDrop(e, null)}
+                        >
+                            <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, letterSpacing:'1px'}}>EXPLORER</div>
+                            <div style={{display:'flex', gap:'10px'}}>
+                                <button onClick={() => { setCreatingItem({ type: 'file', parentId: null }); setNewItemName(''); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'1rem', lineHeight:1}} title="New File">+</button>
+                                <button onClick={() => { setCreatingItem({ type: 'folder', parentId: null }); setNewItemName(''); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'1rem', lineHeight:1}} title="New Folder">📁</button>
+                                <button onClick={downloadWorkspace} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem', lineHeight:1}} title="Download Workspace">💾</button>
+                            </div>
+                        </div>
+                        {examplesLoading && <p className="workspace-note" role="status">Loading examples…</p>}
+                        {storageError && <p className="workspace-note workspace-error" role="alert">{storageError}</p>}
+                        {examplesError && <div className="workspace-note workspace-error" role="alert">{examplesError}<button className="panel-action" onClick={refreshExamples}>Retry</button></div>}
+                        {renderTree(null)}
+                    </aside>
+                    <div className="pane-resizer explorer-resizer" {...resizeHandleProps('explorer')}></div>
+                    </div>
+                    <div className="main" ref={mainRef}>
+                        <div className="toolbar">
+                            <div className="runtime-actions">
+                                <select 
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    title="Semantic Engine Model"
+                                    style={{
+                                        background: 'rgba(255,255,255,0.05)',
+                                        color: '#e2e8f0',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: '4px',
+                                        padding: '7px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: '600',
+                                        fontFamily: 'inherit',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {LOCAL_MODELS.map(m => (
+                                        <option key={m.id} value={m.id} style={{background: '#0a0a0c'}}>{m.name}</option>
+                                    ))}
+                                </select>
+                                <button className="btn" onClick={run} disabled={!engineReady || !editorReady || isRunning || !activeFile}>{isRunning ? 'RUNNING...' : engineError ? 'RUNTIME UNAVAILABLE' : engineReady && editorReady ? 'EXECUTE RUNTIME' : 'LOADING ENGINE...'}</button>
+                                {isRunning && <button className="btn btn-secondary" onClick={stopRuntime}>STOP</button>}
+                                {engineError && <button className="btn btn-secondary" onClick={() => rebootWorker()} title={engineError}>RETRY RUNTIME</button>}
+                            </div>
+                            <div className="workspace-actions">
+                            <div className="system-status" title="Python execution status" style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
+                                <div style={{width:6, height:6, borderRadius:'50%', background: engineError ? 'var(--error)' : 'var(--success)'}}></div> {engineError ? 'RUNTIME UNAVAILABLE' : !engineReady ? 'LOADING PYTHON' : isRunning ? 'RUNNING' : rca?.llmLoading ? 'ANALYZING' : 'PYTHON READY'}
+                            </div>
+                            <div className="layout-controls" role="group" aria-label="Workspace panels">
+                                <button className="panel-toggle" onClick={() => togglePane('explorer')} aria-label="Toggle explorer" aria-pressed={layout.explorerVisible} aria-controls="explorer-panel" aria-keyshortcuts="Control+B Meta+B" title="Toggle Explorer (Ctrl+B)">
+                                    <PaneIcon name="explorer"/><span>Explorer</span>
+                                </button>
+                                <button ref={consoleToggleRef} className="panel-toggle" onClick={() => togglePane('console')} aria-label="Toggle console" aria-pressed={layout.consoleVisible} aria-controls="console-panel" aria-keyshortcuts="Control+J Meta+J" title="Toggle Console (Ctrl+J)">
+                                    <PaneIcon name="console"/><span>Console</span>
+                                </button>
+                                <button ref={analysisToggleRef} className="panel-toggle" onClick={() => togglePane('analysis')} aria-label="Toggle analysis" aria-pressed={layout.analysisVisible} aria-controls="analysis-panel" aria-keyshortcuts="Control+Alt+A Meta+Alt+A" title="Toggle Root Cause Analysis (Ctrl+Alt+A)">
+                                    <PaneIcon name="analysis"/><span>Analysis</span>
+                                </button>
+                                <button className="panel-action" onClick={() => { setLayout({ ...DEFAULT_LAYOUT }); setConsoleMaximized(false); }} aria-label="Reset panel layout" title="Reset panel layout">
+                                    <PaneIcon name="reset"/>
+                                </button>
+                            </div>
+                            </div>
+                        </div>
+                        <div className="editor-zone" ref={editorZoneRef} hidden={layout.consoleVisible && consoleMaximized}>
+                            <div className="editor-container">
+                                <div className="tabs-container">
+                                    {openTabs.map(tId => {
+                                        const tFile = files.find(f => f.id === tId);
+                                        if (!tFile) return null;
+                                        return (
+                                            <div key={tId} className={`editor-tab ${activeId === tId ? 'active' : ''}`} onClick={() => openFile(tId)}>
+                                                <span>📄 {tFile.name}</span>
+                                                <span className="tab-close" onClick={(e) => closeTab(e, tId)}>×</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div id="monaco-container" ref={monacoRef}></div>
+                            </div>
+                            <aside className="rca-panel" id="analysis-panel" aria-labelledby="analysis-panel-title" hidden={!layout.analysisVisible}>
+                                <div className="pane-resizer analysis-resizer" {...resizeHandleProps('analysis')}></div>
+                                <div className="rca-header">
+                                    <div className="pane-heading"><PaneIcon name="analysis"/><h2 className="rca-title" id="analysis-panel-title">{rca?.sourceType === 'log' ? 'Log Root Cause Analysis' : 'Root Cause Analysis'}</h2></div>
+                                    <button className="panel-action" onClick={() => hidePane('analysis')} aria-label="Hide analysis" title="Hide Analysis (Ctrl+Alt+A)"><PaneIcon name="close"/></button>
+                                </div>
+                                <div className="rca-body">
+                                {rca && (rca.sourceFilename || rca.logFilename) && <div className="analysis-origin">{rca.sourceType === 'log' ? 'Log' : 'Last run'}: {rca.sourceFilename || rca.logFilename}{rca.sourceModel && <span>Model: {rca.sourceModel}</span>}</div>}
+                                {!rca && <div className="panel-empty-state"><PaneIcon name="analysis"/><h2>No analysis yet</h2><p>Run a Python file or upload a log to inspect its root cause analysis here.</p><p>You can hide and reopen this panel anytime.</p></div>}
+                                {rca && (() => {
+                                const parsedStream = rca.llmLoading ? parsePartialJSON(rca.streamText) : {};
+                                const activeFeedback = rca.llmLoading ? parsedStream : (rca.feedback || {});
+                                const hasGeneratedFeedback = Boolean(formatFeedbackForTranslation(activeFeedback).trim());
+                                const isLogDebug = rca.sourceType === 'log';
+                                const traceFrames = Array.isArray(rca.frames) ? rca.frames : [];
+                                
+                                const deterministicIns = rca.ins;
+
+                                return (
+                                    <React.Fragment>
+                                        <div className="diagnostic-card" style={{border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.05)'}}>
+                                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
+                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>{isLogDebug ? 'LOG LLM ANALYSIS' : 'SEMANTIC LLM ANALYSIS'}</div>
+                                                {rca.llmLoading 
+                                                    ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'#a855f7', animation:'pulse 1s infinite'}}></div> STREAMING...
+                                                      </div>
+                                                    : <div style={{fontSize:'0.65rem', color: rca.mlError ? 'var(--error)' : 'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background: rca.mlError ? 'var(--error)' : 'var(--success)'}}></div> {rca.mlError ? 'UNAVAILABLE' : 'READY'}
+                                                      </div>
+                                                }
+                                            </div>
+
+                                            {isLogDebug && (
+                                                <div className="feedback-block" style={{borderColor: 'rgba(250, 204, 21, 0.22)'}}>
+                                                    <div className="feedback-block-title" style={{color: '#facc15'}}>Uploaded Log</div>
+                                                    <div className="diagnostic-text">{rca.logFilename || 'uploaded.log'}</div>
+                                                    {rca.logExcerpt && <pre className="log-excerpt">{rca.logExcerpt}</pre>}
+                                                </div>
+                                            )}
+
+                                            {hasGeneratedFeedback && (
+                                                <>
+                                                    {activeFeedback.headline && (
+                                                        <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
+                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>LLM Diagnosis</div>
+                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.headline}</p>
+                                                        </div>
+                                                    )}
+                                                    {activeFeedback.root_cause && (
+                                                        <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
+                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>Deep Root Cause</div>
+                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.root_cause}</p>
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.evidence) && activeFeedback.evidence.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Evidence</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.evidence.map((item, idx) => <li key={`e-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {((Array.isArray(activeFeedback.fix_steps) && activeFeedback.fix_steps.length > 0) || activeFeedback.primary_fix || (Array.isArray(activeFeedback.code_actions) && activeFeedback.code_actions.length > 0)) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Developer Fix Plan</div>
+                                                            {Array.isArray(activeFeedback.fix_steps) && activeFeedback.fix_steps.length > 0 && (
+                                                                <ol className="feedback-list">
+                                                                    {activeFeedback.fix_steps.map((item, idx) => <li key={`f-${idx}`}>{item}</li>)}
+                                                                </ol>
+                                                            )}
+                                                            {(() => {
+                                                                const codeActs = Array.isArray(activeFeedback.code_actions) ? activeFeedback.code_actions : [];
+                                                                const action = codeActs.find(item => item.after) || codeActs[0] || null;
+                                                                const codeSuggestion = action
+                                                                    ? [
+                                                                        action.before ? `Current:\n${action.before}` : '',
+                                                                        action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                                                      ].filter(Boolean).join('\n')
+                                                                    : '';
+                                                                if (codeSuggestion) {
+                                                                    return <pre className="code-suggestion">{codeSuggestion}</pre>;
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.prevention) && activeFeedback.prevention.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Prevention Checks</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.prevention.map((item, idx) => <li key={`p-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.debug_questions) && activeFeedback.debug_questions.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Debugging Questions</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.debug_questions.map((item, idx) => <li key={`q-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+
+                                                    {!rca.llmLoading && (
+                                                        <div className="feedback-block" style={{borderColor: 'rgba(16, 185, 129, 0.25)'}}>
+                                                            <div className="feedback-block-title" style={{color: 'var(--success)'}}>Translate Generated RCA</div>
+                                                            <div className="translate-controls">
+                                                                <select
+                                                                    className="language-select"
+                                                                    value={selectedLanguage}
+                                                                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                                                                    title="Select target language"
+                                                                >
+                                                                    {INDIAN_LANGUAGES.map(language => (
+                                                                        <option key={language.code} value={language.code}>{language.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <button
+                                                                    className="btn btn-secondary"
+                                                                    onClick={() => translateGeneratedRca(activeFeedback, deterministicIns?.explanation || '')}
+                                                                    disabled={isTranslating}
+                                                                >
+                                                                    {isTranslating ? 'CONVERTING...' : 'CONVERT'}
+                                                                </button>
+                                                            </div>
+                                                            {translationError && <div className="translation-error">{translationError}</div>}
+                                                            {translatedRca && <pre className="translated-output">{translatedRca}</pre>}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {rca.mlError && (
+                                                <div className="feedback-block">
+                                                    <div className="feedback-block-title">Local ML Backend</div>
+                                                    <div className="diagnostic-text">{rca.mlError}</div>
+                                                </div>
+                                            )}
+
+
+                                        </div>
+
+                                        <div>
+                                            <div className="rca-title" style={{marginBottom: '2rem'}}>{isLogDebug ? 'LOG FAILURE TRACE' : 'TECHNICAL EXECUTION TRACE'}</div>
+                                            <div className="graph-container">
+                                                {traceFrames.length === 0 && (
+                                                    <div className="graph-node">
+                                                        <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc'}}>No structured trace frames detected</div>
+                                                    </div>
+                                                )}
+                                                {traceFrames.map((f, i) => {
+                                                    const isRoot = i === rca.rc;
+                                                    const isException = i === traceFrames.length - 1;
+                                                    const isBoth = isRoot && isException;
+                                                    return (
+                                                        <div key={i} className={`graph-node ${isRoot ? 'root' : ''} ${isException ? 'exception' : ''}`}>
+                                                            {/* Tags row — always inline at top to avoid absolute overlap */}
+                                                            {(isRoot || isException) && (
+                                                                <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
+                                                                    {isRoot && (
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'#000', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                            ROOT CAUSE
+                                                                        </div>
+                                                                    )}
+                                                                    {isException && (
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'#fff', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                            EXCEPTION
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
+                                                            <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{String(f.code || '').trim()}</div>
+                                                            {i < traceFrames.length - 1 && (
+                                                                <div className="graph-edge">
+                                                                    <div className="graph-arrow"></div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </React.Fragment>
+                                );
+                            })()}
+                                </div>
+                            </aside>
+                        </div>
+                        <section className={`terminal ${consoleMaximized ? 'is-maximized' : ''}`} id="console-panel" aria-labelledby="console-panel-title" hidden={!layout.consoleVisible}>
+                            {!consoleMaximized && <div className="pane-resizer terminal-resizer" {...resizeHandleProps('console')}></div>}
+                            <div className="terminal-header">
+                                <div className="pane-heading"><PaneIcon name="console"/><h2 className="terminal-title" id="console-panel-title">SYSTEM CONSOLE & REPL</h2></div>
+                                <div className="pane-actions">
+                                    <button className="panel-action" onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n' + (isWaitingForInputRef.current ? 'Input: ' : isReplRef.current ? '>>> ' : '') + currentLineRef.current); } }} title="Clear console">CLEAR</button>
+                                    <button className="panel-action" onClick={() => setConsoleMaximized(previous => !previous)} aria-label={consoleMaximized ? 'Restore console size' : 'Maximize console'} title={consoleMaximized ? 'Restore console size' : 'Maximize console'}><PaneIcon name={consoleMaximized ? 'restore' : 'maximize'}/></button>
+                                    <button className="panel-action" onClick={() => hidePane('console')} aria-label="Hide console" title="Hide Console (Ctrl+J)"><PaneIcon name="close"/></button>
+                                </div>
+                            </div>
+                            <div id="xterm-container" ref={termRef}></div>
+                        </section>
+                    </div>
+                    {deleteTarget && (
+                        <div className="delete-backdrop" onClick={cancelDeletion}>
+                            <form className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" onSubmit={confirmDeletion} onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') cancelDeletion(); }}>
+                                <h2 id="delete-dialog-title">Delete “{deleteTarget.name}”?</h2>
+                                <p>This permanently deletes {deleteTarget.fileCount > 1 ? `${deleteTarget.fileCount} files` : 'the selected item'}. Example files are also removed from the project’s examples folder.</p>
+                                {deleteTarget.deleteFolder && <p>This includes disk examples moved to other workspace folders.</p>}
+                                {deleteTarget.requiresPassword && <label className="delete-password-label">Example deletion password
+                                    <input autoFocus type="password" autoComplete="off" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} disabled={isDeleting} required />
+                                </label>}
+                                {deleteError && <p className="delete-error" role="alert">{deleteError}</p>}
+                                <div className="delete-dialog-actions">
+                                    <button type="button" className="btn btn-secondary" onClick={cancelDeletion} disabled={isDeleting} autoFocus={!deleteTarget.requiresPassword}>Cancel</button>
+                                    <button type="submit" className="btn delete-button" disabled={isDeleting || (deleteTarget.requiresPassword && !deletePassword)}>{isDeleting ? 'Deleting…' : 'Delete permanently'}</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                    {contextMenu && (
+                        <ViewportContextMenu menu={contextMenu} onClose={() => setContextMenu(null)}>
+                            <div className="context-menu-item" onClick={() => { handleRenameStart(contextMenu.file.id); }}>✎ Rename</div>
+                            <div className="context-menu-item" onClick={() => { handleDuplicate(contextMenu.file.id); }}>⎘ Duplicate</div>
+                            <div className="context-menu-divider"></div>
+                            {contextMenu.file.type === 'folder' && (
+                                <>
+                                    <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'file', parentId: contextMenu.file.id }); setNewItemName(''); if (!contextMenu.file.isOpen) toggleFolder(contextMenu.file.id); setContextMenu(null); }}>+ New File</div>
+                                    <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'folder', parentId: contextMenu.file.id }); setNewItemName(''); if (!contextMenu.file.isOpen) toggleFolder(contextMenu.file.id); setContextMenu(null); }}>📁 New Folder</div>
+                                    <div className="context-menu-divider"></div>
+                                </>
+                            )}
+                            <div className="context-menu-item danger" onClick={(e) => { handleDeleteFile(e, contextMenu.file.id); setContextMenu(null); }}>🗑️ Delete</div>
+                        </ViewportContextMenu>
+                    )}
+                </div>
+            );
+        }
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

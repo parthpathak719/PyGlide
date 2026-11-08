@@ -1,0 +1,727 @@
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { GitPullRequestArrow, Languages, Network, Sparkles } from 'lucide-react';
+import { getEmbeddings, translateFeedback } from '../services/api';
+
+const INDIAN_LANGUAGES = [
+  { code: 'hi-IN', name: 'Hindi' },
+  { code: 'bn-IN', name: 'Bengali' },
+  { code: 'gu-IN', name: 'Gujarati' },
+  { code: 'kn-IN', name: 'Kannada' },
+  { code: 'ml-IN', name: 'Malayalam' },
+  { code: 'mr-IN', name: 'Marathi' },
+  { code: 'od-IN', name: 'Odia' },
+  { code: 'pa-IN', name: 'Punjabi' },
+  { code: 'ta-IN', name: 'Tamil' },
+  { code: 'te-IN', name: 'Telugu' },
+  { code: 'as-IN', name: 'Assamese' },
+  { code: 'brx-IN', name: 'Bodo' },
+  { code: 'doi-IN', name: 'Dogri' },
+  { code: 'kok-IN', name: 'Konkani' },
+  { code: 'ks-IN', name: 'Kashmiri' },
+  { code: 'mai-IN', name: 'Maithili' },
+  { code: 'mni-IN', name: 'Manipuri' },
+  { code: 'ne-IN', name: 'Nepali' },
+  { code: 'sa-IN', name: 'Sanskrit' },
+  { code: 'sat-IN', name: 'Santali' },
+  { code: 'sd-IN', name: 'Sindhi' },
+  { code: 'ur-IN', name: 'Urdu' },
+];
+
+const EmptyState = () => (
+  <div className="empty-debugger">
+    <Sparkles size={28} />
+    <h2>Semantic Traceback Debugger</h2>
+    <p>Run Python code to capture runtime exceptions, embed traceback context, retrieve BugsInPy matches, and generate RCA.</p>
+  </div>
+);
+
+const Score = ({ value }) => (
+  <span className="score">{Math.max(0, Math.min(1, value || 0)).toFixed(2)}</span>
+);
+
+const FeedbackList = ({ items = [], ordered = false }) => {
+  if (!items.length) return null;
+  const Tag = ordered ? 'ol' : 'ul';
+  return (
+    <Tag className="feedback-list">
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`}>{item}</li>
+      ))}
+    </Tag>
+  );
+};
+
+const CodeActions = ({ actions = [] }) => {
+  if (!actions.length) return null;
+  return (
+    <div className="code-action-list">
+      {actions.map((action, index) => (
+        <article className="code-action" key={`${action.title}-${index}`}>
+          <header>
+            <strong>{action.title}</strong>
+            <span>{action.reason}</span>
+          </header>
+          {(action.before || action.after) && (
+            <div className="code-action-grid">
+              {action.before && (
+                <div>
+                  <small>Current pattern</small>
+                  <pre>{action.before}</pre>
+                </div>
+              )}
+              {action.after && (
+                <div>
+                  <small>Safer pattern</small>
+                  <pre>{action.after}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+};
+
+const formatFeedbackForTranslation = ({ feedback, rca, fix }) => {
+  if (!feedback) {
+    return [
+      rca && `Root cause analysis: ${rca}`,
+      fix && `Suggested fix: ${fix}`,
+    ].filter(Boolean).join('\n\n');
+  }
+
+  const parts = [
+    feedback.headline && `Headline: ${feedback.headline}`,
+    feedback.diagnosis && `Diagnosis: ${feedback.diagnosis}`,
+    feedback.root_cause && `Most likely root cause: ${feedback.root_cause}`,
+    (feedback.primary_fix || fix) && `Primary repair: ${feedback.primary_fix || fix}`,
+    feedback.evidence?.length ? `Evidence:\n${feedback.evidence.map((item) => `- ${item}`).join('\n')}` : '',
+    feedback.fix_steps?.length ? `Fix plan:\n${feedback.fix_steps.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '',
+    feedback.learning_note && `Learning note: ${feedback.learning_note}`,
+  ];
+
+  return parts.filter(Boolean).join('\n\n');
+};
+
+function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStreaming }) {
+  if (!execution) return <EmptyState />;
+
+  if (!execution.error) {
+    return (
+      <div className="debug-content">
+        <div className="success-state">Execution finished successfully. No RCA needed.</div>
+      </div>
+    );
+  }
+
+  const {
+    error,
+    semantic_matches: matches = [],
+    query_embedding = [],
+    root_cause_analysis: rca,
+    suggested_fix: fix,
+    llm_feedback: feedback,
+    filename,
+    execution_time,
+  } = execution;
+  const [datasetEmbeddings, setDatasetEmbeddings] = useState([]);
+  const [loadingEmbeddings, setLoadingEmbeddings] = useState(false);
+  const [embeddingsError, setEmbeddingsError] = useState('');
+  const [filterText, setFilterText] = useState('');
+  const [selectedRecordId, setSelectedRecordId] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
+  const [translatedText, setTranslatedText] = useState('');
+  const [translationError, setTranslationError] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'rca' && isStreaming) {
+      const pre = document.querySelector('.stream-pre');
+      if (pre) {
+        pre.scrollTop = pre.scrollHeight;
+      }
+    }
+  }, [streamingFeedback, activeTab, isStreaming]);
+
+  useEffect(() => {
+    setTranslatedText('');
+    setTranslationError('');
+  }, [feedback, rca, fix]);
+
+  const normalizeVector = (vector) => {
+    const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    return norm > 0 ? vector.map((value) => value / norm) : vector;
+  };
+
+  const cosineDistance = (a = [], b = []) => {
+    const len = Math.min(a.length, b.length);
+    if (len === 0) return 1;
+    const na = normalizeVector(a.slice(0, len));
+    const nb = normalizeVector(b.slice(0, len));
+    const dot = na.reduce((sum, value, index) => sum + value * nb[index], 0);
+    return 1 - Math.max(-1, Math.min(1, dot));
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'embeddings') return;
+    if (datasetEmbeddings.length > 0) return;
+
+    let mounted = true;
+    setLoadingEmbeddings(true);
+    setEmbeddingsError('');
+
+    getEmbeddings()
+      .then((result) => {
+        if (!mounted) return;
+        setDatasetEmbeddings(result.records || []);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setEmbeddingsError(String(err));
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoadingEmbeddings(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab, datasetEmbeddings.length]);
+
+  const hasQuery = query_embedding.length > 0;
+  const embeddingPreview = hasQuery
+    ? query_embedding.slice(0, 40).map((value, index) => `${index}:${value.toFixed(4)}`).join(' ')
+    : 'No embedding available for this error yet.';
+
+  const selectedRecord = useMemo(
+    () => datasetEmbeddings.find((record) => record.id === selectedRecordId) || null,
+    [datasetEmbeddings, selectedRecordId],
+  );
+
+  const renderRuntimeSummary = () => (
+    <div className="explorer-summary">
+      <div className="viz-item">
+        <span className="viz-item-key">Filename</span>
+        <span>{filename || 'main.py'}</span>
+      </div>
+      <div className="viz-item">
+        <span className="viz-item-key">Runtime</span>
+        <span>{execution_time || 'N/A'}</span>
+      </div>
+      <div className="viz-item">
+        <span className="viz-item-key">Matches</span>
+        <span>{matches.length}</span>
+      </div>
+      <div className="viz-item">
+        <span className="viz-item-key">Embedding dims</span>
+        <span>{query_embedding.length}</span>
+      </div>
+    </div>
+  );
+
+  if (activeTab === 'matches') {
+    return (
+      <div className="debug-content">
+        <div className="explorer-toolbar">
+          <div>
+            <h3>
+              <Network size={16} /> Similar Historical Bugs
+            </h3>
+            <p className="muted-copy">Matches are ranked by semantic relevance to this runtime failure.</p>
+          </div>
+          <button className="secondary-button" onClick={() => onTabChange('visualization')}>
+            View Visualization
+          </button>
+        </div>
+        {renderRuntimeSummary()}
+        {matches.length === 0 ? (
+          <p className="muted-copy">No indexed match crossed the similarity threshold. Run BugsInPy ingestion or broaden the query context.</p>
+        ) : (
+          matches.map((match) => (
+            <article className="match-card" key={match.bug_id}>
+              <header>
+                <strong>{match.metadata?.project || 'BugsInPy'} / {match.bug_id}</strong>
+                <Score value={match.score} />
+              </header>
+              <p>{match.metadata?.rca_summary || match.metadata?.exception_type || 'Historical bug record'}</p>
+              <code>{match.metadata?.file_path || match.metadata?.exception_type}</code>
+            </article>
+          ))
+        )}
+      </div>
+    );
+  }
+
+  if (activeTab === 'patch') {
+    const best = matches[0]?.metadata;
+    return (
+      <div className="debug-content">
+        <div className="explorer-toolbar">
+          <div>
+            <h3>
+              <GitPullRequestArrow size={16} /> Retrieved Patch Differences
+            </h3>
+            <p className="muted-copy">Inspect the buggy and fixed code snippets from the best matching historical bug.</p>
+          </div>
+          <button className="secondary-button" onClick={() => onTabChange('matches')}>
+            Back to Matches
+          </button>
+        </div>
+        {renderRuntimeSummary()}
+        {best ? (
+          <>
+            <div className="patch-grid">
+              <div>
+                <span>Buggy code</span>
+                <pre>{best.buggy_code || 'No buggy hunk available.'}</pre>
+              </div>
+              <div>
+                <span>Fixed code</span>
+                <pre>{best.fixed_code || 'No fixed hunk available.'}</pre>
+              </div>
+            </div>
+            <pre className="patch-block">{best.patch || 'Patch body unavailable.'}</pre>
+          </>
+        ) : (
+          <p className="muted-copy">Patch diffs appear after semantic retrieval finds a BugsInPy record.</p>
+        )}
+      </div>
+    );
+  }
+
+  if (activeTab === 'visualization') {
+    const projectedPoints = [];
+    if (query_embedding.length >= 2) {
+      projectedPoints.push({ id: 'query', x: query_embedding[0], y: query_embedding[1], color: '#3fb950', radius: 10, isQuery: true });
+    }
+
+    const scoreColor = (score) => {
+      if (score >= 0.85) return '#38bdf8';
+      if (score >= 0.7) return '#8b5cf6';
+      if (score >= 0.55) return '#fb7185';
+      return '#facc15';
+    };
+
+    matches.forEach((match, index) => {
+      const embedding = match.embedding;
+      let x = 0;
+      let y = 0;
+
+      if (embedding && embedding.length >= 2) {
+        x = embedding[0];
+        y = embedding[1];
+      } else {
+        x = -0.8 + index * 0.3;
+        y = -0.6 + ((index % 3) * 0.4);
+      }
+
+      projectedPoints.push({
+        id: match.bug_id,
+        x,
+        y,
+        color: scoreColor(match.score),
+        radius: 6,
+        isQuery: false,
+      });
+    });
+
+    const hasPlot = projectedPoints.length > 0;
+    const xValues = projectedPoints.map((point) => point.x);
+    const yValues = projectedPoints.map((point) => point.y);
+    const minX = Math.min(...xValues, -1.1);
+    const maxX = Math.max(...xValues, 1.1);
+    const minY = Math.min(...yValues, -1.1);
+    const maxY = Math.max(...yValues, 1.1);
+    const padding = 28;
+    const width = 400;
+    const height = 260;
+
+    const mapX = (value) =>
+      ((value - minX) / Math.max(1e-6, maxX - minX)) * (width - padding * 2) + padding;
+    const mapY = (value) =>
+      height - (((value - minY) / Math.max(1e-6, maxY - minY)) * (height - padding * 2) + padding);
+
+    const plotPoints = projectedPoints.map((point) => ({
+      ...point,
+      cx: mapX(point.x),
+      cy: mapY(point.y),
+    }));
+
+    const tracebackText = error.traceback || `${error.type}: ${error.message}`;
+
+    return (
+      <div className="debug-content">
+        <h3>
+          <Network size={16} /> Vector Search Visualization
+        </h3>
+        <div className="viz-legend">
+          <div><span className="legend-dot query" /> Your error</div>
+          <div><span className="legend-dot high" /> High similarity</div>
+          <div><span className="legend-dot medium" /> Medium similarity</div>
+          <div><span className="legend-dot low" /> Low similarity</div>
+        </div>
+        <div className="viz-grid">
+          <div className="viz-card">
+            <h4>Error logs</h4>
+            <pre className="log-red">{tracebackText}</pre>
+          </div>
+          <div className="viz-card">
+            <h4>Embedding preview</h4>
+            <pre className="code-green">{embeddingPreview}</pre>
+            {query_embedding.length > 40 && (
+              <small className="muted-copy">Showing first 40 dimensions of {query_embedding.length} total.</small>
+            )}
+          </div>
+        </div>
+        <div className="scatter-plot">
+          <svg viewBox="0 0 400 260" preserveAspectRatio="none">
+            <rect x="0" y="0" width="400" height="260" fill="#090c10" rx="12" />
+            {hasPlot && plotPoints.map((point) => (
+              <circle
+                key={point.id}
+                cx={point.cx}
+                cy={point.cy}
+                r={point.radius}
+                fill={point.color}
+                stroke={point.isQuery ? '#ffffff' : 'transparent'}
+                strokeWidth={point.isQuery ? 2 : 0}
+              />
+            ))}
+            {hasPlot && plotPoints.filter((p) => !p.isQuery).map((point) => (
+              <line
+                key={`line-${point.id}`}
+                x1={plotPoints.find((p) => p.isQuery)?.cx || 200}
+                y1={plotPoints.find((p) => p.isQuery)?.cy || 130}
+                x2={point.cx}
+                y2={point.cy}
+                stroke={point.color}
+                strokeWidth="1"
+                opacity="0.35"
+              />
+            ))}
+          </svg>
+        </div>
+        <div className="viz-actions">
+          <button className="secondary-button" onClick={() => onTabChange('embeddings')}>
+            Open Embedding Explorer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTab === 'embeddings') {
+    const filteredEmbeddings = datasetEmbeddings.filter((record) => {
+      const query = filterText.toLowerCase();
+      return (
+        record.id.toLowerCase().includes(query) ||
+        JSON.stringify(record.metadata || {}).toLowerCase().includes(query)
+      );
+    });
+
+    const nearestMatches = hasQuery
+      ? filteredEmbeddings
+          .map((record) => ({
+            ...record,
+            distance: cosineDistance(query_embedding, record.embedding),
+          }))
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 5)
+      : [];
+
+    const selectedRecord = selectedRecordId
+      ? datasetEmbeddings.find((record) => record.id === selectedRecordId)
+      : null;
+
+    return (
+      <div className="debug-content">
+        <div className="explorer-toolbar">
+          <div>
+            <h3>Embedding Explorer</h3>
+            <p className="muted-copy">Browse stored vectors and inspect the closest records for the current runtime error.</p>
+          </div>
+          <button className="secondary-button" onClick={() => onTabChange('visualization')}>
+            Back to Visualization
+          </button>
+        </div>
+
+        {renderRuntimeSummary()}
+        <div className="explorer-summary">
+          <div className="viz-item">
+            <span className="viz-item-key">Records loaded</span>
+            <span>{datasetEmbeddings.length}</span>
+          </div>
+          <div className="viz-item">
+            <span className="viz-item-key">Query embedding</span>
+            <span>{hasQuery ? 'Available' : 'Missing'}</span>
+          </div>
+          {embeddingsError && <p className="muted-copy">Error loading embeddings: {embeddingsError}</p>}
+        </div>
+
+        <div className="explorer-grid">
+          <div>
+            <div className="nearest-block">
+              <h4>Closest dataset points</h4>
+              <div className="nearest-list">
+                {nearestMatches.map((record, index) => (
+                  <button
+                    key={record.id}
+                    className={`nearest-card ${selectedRecordId === record.id ? 'highlighted' : ''}`}
+                    onClick={() => setSelectedRecordId(record.id)}
+                  >
+                    <div>
+                      <div className="nearest-rank">#{index + 1}</div>
+                      <div className="nearest-id">{record.id}</div>
+                      <div className="nearest-meta">{record.metadata?.exception_type || 'Stored record'}</div>
+                    </div>
+                    <div className="nearest-distance">{record.distance.toFixed(3)}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="soft-panel">
+              <h4>Embedding preview</h4>
+              <pre className="code-green">{embeddingPreview}</pre>
+            </div>
+          </div>
+
+          <div className="record-detail">
+            <h4>Selected record</h4>
+            {selectedRecord ? (
+              <>
+                <div className="detail-row">
+                  <span>ID</span>
+                  <strong>{selectedRecord.id}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Exception</span>
+                  <strong>{selectedRecord.metadata?.exception_type || 'Unknown'}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Project</span>
+                  <strong>{selectedRecord.metadata?.project || 'Unknown'}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Distance</span>
+                  <strong>{hasQuery ? cosineDistance(query_embedding, selectedRecord.embedding).toFixed(3) : 'N/A'}</strong>
+                </div>
+                <div className="detail-text">
+                  <pre>{JSON.stringify(selectedRecord.metadata || {}, null, 2)}</pre>
+                </div>
+              </>
+            ) : (
+              <p className="muted-copy">Select a record to inspect its stored metadata and embedding details.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const confidence = Math.round((feedback?.confidence || 0) * 100);
+  const hasDetailedFeedback = Boolean(feedback);
+  const translationSourceText = formatFeedbackForTranslation({ feedback, rca, fix });
+
+  const handleTranslate = async () => {
+    if (!translationSourceText.trim()) {
+      setTranslationError('No generated RCA text is available to translate yet.');
+      return;
+    }
+
+    setIsTranslating(true);
+    setTranslationError('');
+
+    try {
+      const result = await translateFeedback(translationSourceText, selectedLanguage);
+      setTranslatedText(result.translated_text || '');
+    } catch (err) {
+      setTranslationError(String(err.message || err));
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  if (activeTab === 'rca' && (isStreaming || (!feedback && streamingFeedback))) {
+    return (
+      <div className="debug-content">
+        <div className="feedback-hero">
+          <div>
+            <h3>AI Diagnostic Stream</h3>
+            <p>Analyzing root cause in real-time using local LLM...</p>
+          </div>
+          <div className="feedback-chips animate-pulse">
+            <span className="chip" style={{ background: '#facc15', color: '#1a1f26' }}>Streaming</span>
+          </div>
+        </div>
+
+        <section className="feedback-section" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <h4>Generated Output</h4>
+          <pre className="stream-pre" style={{ 
+            background: '#090c10', 
+            color: '#c9d1d9', 
+            padding: '1rem', 
+            borderRadius: '6px', 
+            border: '1px solid #30363d',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '0.85rem',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            maxHeight: '400px',
+            overflowY: 'auto',
+            lineHeight: '1.4'
+          }}>{streamingFeedback}</pre>
+        </section>
+
+        {renderRuntimeSummary()}
+      </div>
+    );
+  }
+
+  return (
+    <div className="debug-content">
+      <div className="feedback-hero">
+        <div>
+          <h3>{feedback?.headline || 'Root Cause Analysis'}</h3>
+          <p>{feedback?.diagnosis || rca || 'No root cause summary available yet.'}</p>
+        </div>
+        {hasDetailedFeedback && (
+          <div className="feedback-chips">
+            <span className="chip">{confidence}% confidence</span>
+          </div>
+        )}
+      </div>
+
+      {hasDetailedFeedback ? (
+        <>
+          <div className="feedback-grid">
+            <section className="feedback-section">
+              <h4>Most likely root cause</h4>
+              <p>{feedback.root_cause}</p>
+            </section>
+            <section className="feedback-section">
+              <h4>Primary repair</h4>
+              <p>{feedback.primary_fix || fix}</p>
+            </section>
+          </div>
+
+          {feedback.evidence?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Evidence used by the local model</h4>
+              <FeedbackList items={feedback.evidence} />
+            </section>
+          )}
+
+          {feedback.fix_steps?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Fix plan</h4>
+              <FeedbackList items={feedback.fix_steps} ordered />
+            </section>
+          )}
+
+          <CodeActions actions={feedback.code_actions} />
+
+          {feedback.historical_patterns?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Historical bug patterns</h4>
+              <div className="pattern-list">
+                {feedback.historical_patterns.map((pattern) => (
+                  <article className="pattern-row" key={pattern.bug_id}>
+                    <div>
+                      <strong>{pattern.project || 'BugsInPy'} / {pattern.bug_id}</strong>
+                      <p>{pattern.lesson || 'Related historical failure pattern.'}</p>
+                    </div>
+                    <Score value={pattern.score} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(feedback.validation_checks?.length > 0 || feedback.prevention?.length > 0) && (
+            <div className="feedback-grid">
+              {feedback.validation_checks?.length > 0 && (
+                <section className="feedback-section">
+                  <h4>Validation checks</h4>
+                  <FeedbackList items={feedback.validation_checks} />
+                </section>
+              )}
+              {feedback.prevention?.length > 0 && (
+                <section className="feedback-section">
+                  <h4>Prevention</h4>
+                  <FeedbackList items={feedback.prevention} />
+                </section>
+              )}
+            </div>
+          )}
+
+          {(feedback.learning_note || feedback.debug_questions?.length > 0) && (
+            <section className="feedback-section learning-note">
+              <h4>Learning note</h4>
+              {feedback.learning_note && <p>{feedback.learning_note}</p>}
+              <FeedbackList items={feedback.debug_questions} />
+            </section>
+          )}
+        </>
+      ) : (
+        <div className="row-cards">
+          <div className="info-card">
+            <h4>Error details</h4>
+            <p>{error.message}</p>
+            <small>{error.file_name}</small>
+          </div>
+          <div className="info-card">
+            <h4>Suggested fix</h4>
+            <p>{fix || 'No fix suggestion available.'}</p>
+          </div>
+        </div>
+      )}
+
+      <section className="feedback-section translation-section">
+        <div className="translation-toolbar">
+          <div>
+            <h4>
+              <Languages size={14} /> Translate generated RCA
+            </h4>
+            <p className="muted-copy">Convert the English explanation into an Indian language using Sarvam.</p>
+          </div>
+          <div className="translation-actions">
+            <select
+              value={selectedLanguage}
+              onChange={(event) => setSelectedLanguage(event.target.value)}
+              className="language-select"
+              aria-label="Select target language"
+            >
+              {INDIAN_LANGUAGES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="secondary-button"
+              onClick={handleTranslate}
+              disabled={isTranslating || !translationSourceText.trim()}
+            >
+              <Languages size={14} />
+              {isTranslating ? 'Converting...' : 'Convert'}
+            </button>
+          </div>
+        </div>
+        {translationError && <p className="translation-error">{translationError}</p>}
+        {translatedText && <pre className="translated-output">{translatedText}</pre>}
+      </section>
+
+      {renderRuntimeSummary()}
+      <div className="insight-panel">
+        <h4>Semantic Insight</h4>
+        <p>{error.traceback ? error.traceback.split('\n').slice(-1)[0] : 'Traceback will appear here once the code is executed.'}</p>
+      </div>
+    </div>
+  );
+}
+
+export default RCAPanel;
