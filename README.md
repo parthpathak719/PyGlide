@@ -139,6 +139,12 @@ Running a file copies the browser workspace into Pyodide, with the active file's
 
 Deleting a predefined example requires `EXAMPLE_DELETE_PASSWORD` from `backend/.env` and permanently removes its disk file. Ordinary workspace files need no password and are removed from the browser's saved workspace. Deleted examples are not recreated on reload; existing browser files are preserved under `workspace/`.
 
+### Python autocomplete
+
+Type a prefix such as `pri` to see Python built-ins, keywords, and function/variable names declared in the current file. Use the arrow keys to select a suggestion, then Tab or Enter to accept; Ctrl+Space opens the list manually and Escape dismisses it. Normal Tab indentation is preserved when the suggestion list is closed.
+
+The list also offers editable templates for functions, classes, loops, conditionals, and try/except blocks. Completion runs entirely in the browser, without AI requests. This basic version does not infer object types, imported-library members, or names from other files; suggestions are suppressed in comments, strings, and member-access contexts.
+
 ### Workspace panels
 
 - Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Closing a panel with **×** hides it and preserves its contents.

@@ -1315,6 +1315,13 @@
                             language: 'python',
                             // Keep the established textarea input path for browser/accessibility compatibility.
                             editContext: false,
+                            quickSuggestions: { other: true, comments: false, strings: false },
+                            quickSuggestionsDelay: 120,
+                            wordBasedSuggestions: 'off',
+                            snippetSuggestions: 'bottom',
+                            acceptSuggestionOnEnter: 'smart',
+                            acceptSuggestionOnCommitCharacter: false,
+                            tabCompletion: 'off',
                             theme: 'pyglide-dark',
                             automaticLayout: true,
                             minimap: { enabled: false },
