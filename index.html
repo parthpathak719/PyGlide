@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>PyGlide | Premium Python IDE</title>
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png">
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
@@ -1308,7 +1309,12 @@
                             base: 'vs-dark',
                             inherit: true,
                             rules: [],
-                            colors: { 'editor.background': '#0f0f11' }
+                            colors: {
+                                'editor.background': '#0f0f11',
+                                'scrollbarSlider.background': '#52525e80',
+                                'scrollbarSlider.hoverBackground': '#71717e99',
+                                'scrollbarSlider.activeBackground': '#9393a3aa'
+                            }
                         });
                         editorInstance.current = window.monaco.editor.create(monacoRef.current, {
                             value: '', 
@@ -1325,6 +1331,9 @@
                             theme: 'pyglide-dark',
                             automaticLayout: true,
                             minimap: { enabled: false },
+                            cursorStyle: 'line',
+                            cursorWidth: 2,
+                            fontLigatures: false,
                             fontSize: 14,
                             fontFamily: "'JetBrains Mono', monospace"
                         });
@@ -1694,6 +1703,8 @@
                             theme: { background: '#070708', foreground: '#e2e8f0', cursor: '#3b82f6' },
                             fontFamily: "'JetBrains Mono', monospace",
                             fontSize: 13,
+                            cursorStyle: 'bar',
+                            cursorWidth: 2,
                             cursorBlink: true
                         });
                         let fitAddon = null;
