@@ -9,9 +9,13 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('message', event => {
+    if (event.data?.type === 'claim_runtime_clients') {
+        event.waitUntil(self.clients.claim());
+        return;
+    }
     // No registry: a suspended service worker can recover the window identity.
     if (event.data?.type === 'input_client_id') {
-        event.ports[0]?.postMessage({ clientId: event.source?.id || '' });
+        event.ports?.[0]?.postMessage({ clientId: event.source?.id || '' });
     } else if (event.data?.type === 'cancel_inputs') {
         for (const [uid, pending] of pendingRequests) {
             if (pending.clientId === event.source?.id && pending.ownerId === event.data.ownerId) {

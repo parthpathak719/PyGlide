@@ -9,12 +9,13 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 function serviceWorker() {
   const handlers = {};
   const messages = { A: [], B: [] };
+  let claims = 0;
   const clients = Object.fromEntries(Object.keys(messages).map(id => [id, {
     id, type: 'window', postMessage: message => messages[id].push(message),
   }]));
   vm.runInNewContext(source, { URL, Response, self: {
     addEventListener: (name, callback) => { handlers[name] = callback; },
-    clients: { get: async id => clients[id] },
+    clients: { get: async id => clients[id], claim: async () => { claims++; } },
   } });
   const input = (id, uid) => {
     let response;
@@ -30,8 +31,16 @@ function serviceWorker() {
       respondWith(value) { response = value; } });
     return response;
   };
-  return { handlers, messages, input, provide };
+  return { handlers, messages, input, provide, claimCount: () => claims };
 }
+
+test('an existing active worker can reclaim a hard-refreshed page without activating again', async () => {
+  const sw = serviceWorker();
+  let lifetime;
+  sw.handlers.message({ data: { type: 'claim_runtime_clients' }, waitUntil: promise => { lifetime = promise; } });
+  await lifetime;
+  assert.equal(sw.claimCount(), 1);
+});
 
 test('simultaneous tabs receive and answer only their own Python input', async () => {
   const sw = serviceWorker();

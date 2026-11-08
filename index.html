@@ -207,9 +207,44 @@
             return { files: snapshot, filename: (active && pathFor(active)) || 'main.py' };
         };
 
-        const inputClientId = () => new Promise((resolve, reject) => {
-            const controller = navigator.serviceWorker?.controller;
-            if (!controller) { resolve(''); return; }
+        const runtimeServiceWorkerController = (serviceWorker, timeoutMs = 8000) => new Promise((resolve, reject) => {
+            if (!serviceWorker) { resolve(null); return; }
+            let settled = false;
+            let timer;
+            const finish = error => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                serviceWorker.removeEventListener('controllerchange', onControllerChange);
+                if (error) reject(error);
+                else resolve(serviceWorker.controller);
+            };
+            const onControllerChange = () => {
+                if (serviceWorker.controller) finish();
+            };
+            const requestControl = registration => {
+                if (settled) return;
+                if (serviceWorker.controller) { finish(); return; }
+                // Hard refresh bypasses the existing controller. An already
+                // active worker does not activate again, so explicitly reclaim.
+                registration.active?.postMessage({ type: 'claim_runtime_clients' });
+            };
+            timer = setTimeout(() => finish(new Error(
+                'Python could not reconnect to this tab. Click RETRY RUNTIME or reload the page.'
+            )), timeoutMs);
+            serviceWorker.addEventListener('controllerchange', onControllerChange);
+            // Check for updates even when this page already has a controller.
+            Promise.resolve().then(() => serviceWorker.register('/sw.js')).then(registration => {
+                requestControl(registration);
+                if (!settled) serviceWorker.ready.then(requestControl).catch(finish);
+            }).catch(finish);
+            onControllerChange();
+        });
+
+        const inputClientId = async () => {
+            const controller = await runtimeServiceWorkerController(navigator.serviceWorker);
+            if (!controller) return '';
+            return new Promise((resolve, reject) => {
             const channel = new MessageChannel();
             const timer = setTimeout(() => {
                 channel.port1.close();
@@ -222,7 +257,8 @@
                 else reject(new Error('Python input could not identify this tab. Reload the page and retry.'));
             };
             controller.postMessage({ type: 'input_client_id' }, [channel.port2]);
-        });
+            });
+        };
 
         const extractExceptionType = (msg) => {
             const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1949,28 +1985,13 @@
                     isWaitingForInputRef.current = true;
                     isReplRef.current = false;
                 };
-                const onControllerChange = () => {
-                    if (!workerRef.current) rebootWorker();
-                };
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.addEventListener('message', onInputRequest);
-                    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
-                    navigator.serviceWorker.register('/sw.js').then(() => {
-                        if (navigator.serviceWorker.controller && !workerRef.current) {
-                            rebootWorker();
-                        }
-                    }).catch(err => {
-                        console.error("SW Registration failed:", err);
-                        rebootWorker(); // Fallback
-                    });
-                    
-                } else {
-                    rebootWorker();
-                }
+                navigator.serviceWorker?.addEventListener('message', onInputRequest);
+                // Startup and retries share the same bounded controller setup.
+                // Never wait indefinitely for a controllerchange event.
+                rebootWorker();
 
                 return () => {
                     navigator.serviceWorker?.removeEventListener('message', onInputRequest);
-                    navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
                     navigator.serviceWorker?.controller?.postMessage({ type: 'cancel_inputs', ownerId: inputOwnerRef.current });
                     inputOwnerRef.current = null;
                     if (workerRef.current) workerRef.current.terminate();
