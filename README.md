@@ -1,353 +1,319 @@
-# PyGlide — Python Web IDE with Semantic Log Debugging & Root Cause Analysis
+<p align="center">
+  <img src="public/favicon.png" alt="PyGlide logo" width="72">
+</p>
 
-**PyGlide** is a web-based Python IDE with code execution, an interactive console, semantic log debugging, root cause analysis (RCA), historical bug matching, and local AI feedback through Ollama.
+<h1 align="center">PyGlide</h1>
 
-It includes a multi-file workspace, resizable panels, traceback visualization, and optional Indian-language RCA translation through Sarvam. Code execution and structured debugging currently support **Python**.
+<p align="center">Write Python. Run it in your browser. Understand what went wrong.</p>
 
-**Free cloud deployment:** [DEPLOYMENT.md](DEPLOYMENT.md) describes Render Static Site + Render Free backend + Groq Free AI, so your computer can stay off. Optional Supabase storage preserves shared example deletions. The local Ollama setup below is still supported.
+<p align="center">
+  <a href="https://pyglide-web.onrender.com/">Open the live IDE</a> ·
+  <a href="#run-locally">Run locally</a> ·
+  <a href="DEPLOYMENT.md">Deployment guide</a>
+</p>
 
-PyGlide uses three local services:
+![PyGlide workspace with the Python editor, interactive console and AI root cause analysis](docs/images/pyglide-workspace.jpg)
 
-- Frontend IDE: React/Vite app served on `http://localhost:3000`
-- Backend API: FastAPI server on `http://localhost:8000`
-- Local LLM: Ollama server on `http://localhost:11434`
+PyGlide is a browser-based Python IDE with an interactive console, a multi-file workspace and AI-assisted root cause analysis (RCA). Run a program or upload a log to explore its traceback, likely cause, related bug patterns and suggested repairs.
 
-## Prerequisites
+The hosted version uses **Groq** for AI feedback. You can also run PyGlide locally with **Ollama**. Optional **Sarvam** translation makes generated explanations available in Indian languages.
 
-Install these before running the project:
+## What you can do
 
-- Node.js 22.12+ and npm
-- Python 3.10+ recommended (3.11 or newer works)
-- Ollama
-- The Ollama models used by the project: `qwen2.5-coder:1.5b`, `llama3.2:1b`, `phi4-mini:latest`
-- Sarvam API key (optional, required only for translating RCA output into Indian languages)
+| Area | Features |
+| --- | --- |
+| **Editor** | Monaco syntax highlighting, Python completions, current-file names and editable code templates. |
+| **Python runtime** | Browser execution through Pyodide, an interactive REPL, `input()`, console output and Stop. |
+| **Workspace** | Files and folders, multiple tabs, sibling imports, relative data files and ZIP downloads. |
+| **Root cause analysis** | Traceback frames, candidate-frame ranking, historical bug matching, streamed AI feedback, fix plans and prevention checks. |
+| **Log debugger** | Debug `.log`, `.txt`, `.out`, `.err`, `.trace`, `.csv`, `.xlsx` and `.xls` uploads. |
+| **Language support** | Translate completed RCA reports through Sarvam; keep the English report available. |
+| **Interface** | Resizable Explorer, Console and Analysis panels, saved layout preferences, dark scrollbars, Programmer Focus statistics and a Model Guide. |
 
-Internet access is needed for CDN assets and optional Sarvam translation; Ollama feedback runs locally.
+## Try the hosted IDE
 
-## First-Time Setup
+1. Open [PyGlide](https://pyglide-web.onrender.com/) and wait for **PYTHON READY**.
+2. Create a Python file, or open an example from the Explorer.
+3. Click **EXECUTE RUNTIME**. Enter answers in the console when the program asks for input.
+4. If the program fails, inspect the **Root Cause Analysis** panel. After feedback finishes, choose a language and select **CONVERT** to translate it.
 
-Clone the repo and enter the project folder:
+Try both interactive input and an intentional error:
+
+```python
+name = input("Your name: ")
+print(f"Hello, {name}!")
+print(1 / 0)  # Opens analysis for a ZeroDivisionError.
+```
+
+The bundled scripts in [`examples/`](examples/) intentionally demonstrate Python errors. **LOG DEBUGGER** lets you inspect an existing log without executing its original program.
+
+## Run locally
+
+Use **Node.js 22.12+**, npm and **Python 3.12**. Ollama is needed only when you choose local AI feedback. Internet access is needed for CDN assets, the initial Python runtime download and cloud AI or translation requests.
+
+### 1. Install dependencies
 
 ```bash
 git clone https://github.com/parthpathak719/PyGlide.git
 cd PyGlide
+npm ci
+python -m venv .venv
 ```
 
-Install frontend dependencies:
+Activate the Python environment for your shell:
+
+| Shell | Command |
+| --- | --- |
+| Windows PowerShell | `.\.venv\Scripts\Activate.ps1` |
+| macOS / Linux | `source .venv/bin/activate` |
+
+Then install the lightweight backend dependencies, including Excel log readers:
 
 ```bash
-npm install
+python -m pip install -r backend/requirements-hosted.txt
 ```
 
-Install backend dependencies:
+This setup uses the default hash embedder and works with either AI provider. Keep `PYGLIDE_HOSTED="false"` for local use. Optional MiniLM setup is covered in the configuration reference below.
+
+### 2. Create your configuration files
+
+Copy the two templates to their matching locations:
 
 ```bash
-cd backend
-pip install -r requirements.txt
-cd ..
+cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
-For Excel logs, also run `pip install pandas openpyxl` in the same environment; `.xls` files additionally require `xlrd`.
+The root [`.env.example`](.env.example) contains **public frontend settings**. [`backend/.env.example`](backend/.env.example) contains **backend settings and private credentials**. Fill in only the services you use; keep real `.env` files out of Git. Existing system environment variables take priority over `backend/.env`.
 
-### Windows setup (recommended if pip fails with long path or build errors)
+### 3. Choose an AI provider
 
-Long project folder paths can break the PyTorch install on Windows, and pinned older versions may try to compile from source. To avoid both, create the virtual environment at a short path:
+**Ollama — default local setup**
 
-```powershell
-python -m venv E:\venvs\logdbg
-E:\venvs\logdbg\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-E:\venvs\logdbg\Scripts\python.exe -m pip install fastapi uvicorn pydantic sentence-transformers requests python-multipart scikit-learn httpx python-dotenv --only-binary=:all:
-```
-
-Notes:
-
-- Replace `E:\venvs\logdbg` with any short folder you like, for example `C:\venvs\logdbg`.
-- The first command installs the CPU build of PyTorch, which is smaller and works without an NVIDIA GPU.
-- `--only-binary=:all:` prevents pip from compiling packages, so Microsoft C++ Build Tools are not needed.
-- Do not install into a shared conda environment, since the pinned versions can downgrade packages used by other projects.
-
-Install/pull the local Ollama models:
-
-```bash
-ollama pull qwen2.5-coder:1.5b
-ollama pull llama3.2:1b
-ollama pull phi4-mini:latest
-```
-
-## Running PyGlide
-
-Start the app using three terminals.
-
-### Terminal 1: Start Ollama
+Keep the templates' `ollama` provider values and install [Ollama](https://ollama.com/). Start its server in a separate terminal if its background service is not already running:
 
 ```bash
 ollama serve
 ```
 
-If Ollama is already running in the background, this may say the port is already in use. That is fine as long as `http://localhost:11434` is active.
-
-### Terminal 2: Start the Backend
-
-From the project root:
+Back in your setup terminal, pull the default model:
 
 ```bash
-cd backend
-python main.py
+ollama pull qwen2.5-coder:1.5b
 ```
 
-If you used the Windows setup above, start the backend with the venv Python instead:
+The toolbar also offers `llama3.2:1b` and `phi4-mini:latest`; pull a model before selecting it. **Model Guide** lists the available choices.
 
-```powershell
-cd backend
-E:\venvs\logdbg\Scripts\python.exe main.py
+**Groq — cloud alternative**
+
+Add these settings to the indicated files. Your computer does not need to run a local model.
+
+| File | Setting |
+| --- | --- |
+| Root `.env` | `VITE_LLM_PROVIDER="groq"` |
+| `backend/.env` | `LLM_PROVIDER="groq"` and `GROQ_API_KEY="your_groq_api_key"` |
+
+Both templates default to `openai/gpt-oss-20b`. If you change it, keep `VITE_GROQ_MODEL` and `GROQ_MODEL` in sync.
+
+### 4. Start the API and frontend
+
+In a terminal with your Python environment activated, run this from the project root:
+
+```bash
+python -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-The backend should start on:
-
-```text
-http://localhost:8000
-```
-
-### Terminal 3: Start the Frontend
-
-From the project root:
+In another terminal, also from the project root:
 
 ```bash
 npm run dev
 ```
 
-Open:
+Open [localhost:3000](http://localhost:3000). The API runs at [localhost:8000](http://localhost:8000); its [health check](http://localhost:8000/health) and [interactive API reference](http://localhost:8000/docs) are available there.
+
+## Working in the editor
+
+### Completions and shortcuts
+
+Type `pri` to see `print` and other matching suggestions. Completion covers Python built-ins, keywords and names declared in the current file. Templates include functions, classes, loops, conditionals and `try` / `except` blocks.
+
+| Action | Shortcut |
+| --- | --- |
+| Open suggestions | `Ctrl+Space` |
+| Navigate suggestions | `↑` / `↓` |
+| Accept / dismiss a suggestion | `Tab` or `Enter` / `Esc` |
+| Toggle Explorer | `Ctrl+B` |
+| Toggle Console | `Ctrl+J` |
+| Toggle Analysis | `Ctrl+Alt+A` |
+
+Use Command for the panel shortcuts on macOS. Normal Tab indentation is preserved when suggestions are closed. Completions run in the browser without AI calls. This basic version does not infer object types, imported-library members or names from other files; suggestions are suppressed in comments, strings and member-access contexts.
+
+### Panels and saved work
+
+Drag the Explorer's right edge, Analysis's left edge or Console's top edge to resize a panel. Focus an edge and use the arrow keys to adjust it, or double-click to reset its size. The console chevron maximizes or restores it; **Reset panel layout** restores all defaults.
+
+Closing a panel hides it and preserves its contents. Analysis stays available through edits and file switches until the next run; a successful run clears the previous analysis. Files, open tabs, layout preferences and Programmer Focus statistics are saved in the current browser. Use **Download Workspace** to export a ZIP.
+
+Each run starts a fresh Python worker and copies the workspace into `/home/pyglide`, using the active file's folder as its working directory. This supports sibling imports, nested packages and relative data-file reads. REPL commands share state until the next Run or Stop. Python packages must be compatible with Pyodide.
+
+## How the pieces fit together
+
+| Component | Responsibility |
+| --- | --- |
+| **Browser** | React interface, Monaco editor, Pyodide worker, Xterm.js console and local workspace storage. A service worker routes interactive input to the correct tab. |
+| **FastAPI backend** | Parses tracebacks and logs, retrieves related bug records, builds RCA, streams AI feedback and handles translation. |
+| **AI provider** | Groq for cloud feedback, or Ollama for local feedback. Code/error context is sent to the selected provider through the backend. |
+| **Example storage** | Source files ship in Git. Local deletion removes disk files; hosted deletion writes persistent records to Supabase. |
+
+Python entered in the active IDE executes in the browser. The backend receives source/error context for debugging and uploaded logs; Sarvam receives report text when you request translation. Workspace files stay in browser storage and do not sync between devices.
+
+Retrieval starts with **eight bundled bug records** and uses deterministic hash embeddings by default. Optional MiniLM support is available locally. Generated indexes are ignored by Git and can be rebuilt from the bundled records. AI failures retain deterministic feedback rather than blocking the editor.
+
+## Host it with your computer off
+
+The free deployment uses the same repository on `main`:
+
+| Part | Service |
+| --- | --- |
+| Frontend | Render Static Site |
+| API | Render Free Web Service |
+| AI feedback | Groq Free |
+| Persistent shared-example deletions | Supabase Free |
+| Optional report translation | Sarvam, subject to its available credits |
+
+Follow **[DEPLOYMENT.md](DEPLOYMENT.md)** for service settings, environment variables, the optional Render Blueprint and deployment checks. The hosted backend uses lightweight dependencies and disables server-side code execution and dataset ingestion. Visitors run Python in their own browsers, so your computer and Ollama can stay off.
+
+Free services have limits: [Render](https://render.com/docs/free) sleeps after idle periods, [Groq](https://console.groq.com/docs/rate-limits) applies request/token quotas, and [Supabase](https://supabase.com/docs/guides/platform/free-project-pausing) may pause low-activity projects. These services suit a project/demo within their free quotas. Loading shared examples queries Supabase; running browser Python alone does not. See the deployment guide for current limits and recovery steps.
+
+## Configuration reference
+
+<details>
+<summary><strong>Environment variables</strong></summary>
+
+**Root `.env` — public values included in the frontend build**
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_API_URL` | Backend origin; defaults to `http://localhost:8000`. |
+| `VITE_LLM_PROVIDER` | `ollama` or `groq`; match the backend provider. |
+| `VITE_GROQ_MODEL` | Groq model displayed in the IDE; match `GROQ_MODEL`. |
+
+**`backend/.env` — backend configuration and secrets**
+
+| Variable | Purpose |
+| --- | --- |
+| `LLM_PROVIDER` | `ollama` locally, or `groq` with a Groq key. |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Groq credentials and model selection. |
+| `SARVAM_API_KEY` | Enables optional RCA translation. |
+| `EXAMPLE_DELETE_PASSWORD` | Authorizes deletion of protected/shared examples. |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Persist hosted example-deletion records. Accepts a backend secret key (`sb_secret_...`) or legacy `service_role` JWT. |
+| `SUPABASE_PASSWORD` | Optional database-password reference; the app does not read it. It is separate from the API key above. |
+| `PYGLIDE_HOSTED` | `false` locally; `true` enables hosted request limits and disables server execution/imports. |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins. Use the actual frontend HTTPS origin on Render. |
+| `SEMANTIC_DEBUGGER_EMBEDDER` | `hash` by default; optional `minilm` uses locally cached model weights. |
+
+Keep API keys, Supabase credentials and the deletion password in the backend only. Frontend environment changes require restarting Vite locally or rebuilding the hosted frontend; backend changes require restarting/redeploying the API.
+
+For optional MiniLM retrieval, install `backend/requirements.txt` in the same Python environment, cache `all-MiniLM-L6-v2` locally, set `SEMANTIC_DEBUGGER_EMBEDDER="minilm"` and restart the backend. If its dependencies or cached weights are unavailable, the embedder falls back to hashing. On Windows, a short virtual-environment path such as `C:\venvs\pyglide` helps avoid long-path installation errors.
+
+</details>
+
+<details>
+<summary><strong>Translation, example deletion and hosted limits</strong></summary>
+
+- **Translation:** set `SARVAM_API_KEY` in the backend. Completed English reports can be translated into Hindi, Bengali, Gujarati, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Urdu and other supported languages. Reports are limited to 20,000 characters and translated in ordered chunks of at most 2,000. A failed chunk returns an error and keeps the English RCA available.
+- **Ordinary workspace files:** edits and deletions affect the current browser's saved workspace.
+- **Local examples:** deleting a predefined example requires `EXAMPLE_DELETE_PASSWORD` and permanently removes its file from `examples/`.
+- **Hosted examples:** password-authorized deletions write Supabase records and hide those examples for all visitors across deployments. Supabase stores deletion records, while example source content remains in Git. Without Supabase, shared deletion is refused. Set up the table with [`supabase/schema.sql`](supabase/schema.sql); restoration is described in the deployment guide.
+- **Hosted requests:** the backend caps request bodies at 256 KiB and shares a limit of eight AI, translation or example-deletion requests per minute. Groq's own quotas also apply. Excel uploads are base64-encoded; keep workbooks under about 192 KiB so the full JSON request fits the limit.
+
+</details>
+
+## Development reference
+
+<details>
+<summary><strong>Project map</strong></summary>
 
 ```text
-http://localhost:3000
+index.html                    Active IDE and inline React application
+src/
+  monaco-runtime.js           Bundled Monaco setup and worker
+  python-completion.js        Python completions and snippets
+  font-metrics.js             Refreshes measurements after web fonts load
+  workspace.css               Panel layout, responsive styles and scrollbars
+pyworker.js                   Pyodide execution, workspace files and REPL
+sw.js                         Per-tab interactive-input routing
+backend/
+  main.py                     FastAPI endpoints and hosted request limits
+  settings.py                 Backend environment loading
+  parser/                     Traceback and uploaded-log parsing
+  rca/                        Root cause analysis
+  embeddings/                 Hash / optional MiniLM embeddings
+  ingestion/                  Bundled records and BugsInPy ingestion
+  vector_db/                  Local vector storage and search
+  llm/                        Groq / Ollama feedback
+  sarvam_translate.py         Report translation
+  example_files.py            Example listing and protected deletion
+  example_deletions.py        Supabase deletion persistence
+  tests/                      Backend tests
+tests/                        Frontend and browser-runtime contract tests
+examples/                     Intentionally failing Python demos
+public/                       Favicon assets
+supabase/schema.sql           Hosted deletion table and access policy
+render.yaml                   Optional Render deployment Blueprint
+DEPLOYMENT.md                 Full hosting guide
 ```
 
-## How to Use
+The active Vite entry is **`index.html`**. `src/App.jsx`, `src/main.jsx` and their related components are a separate React implementation; they are not the current IDE entry point.
 
-1. Open PyGlide at `http://localhost:3000`.
-2. Select or write Python code in the editor.
-3. Once Python is ready, click `EXECUTE RUNTIME`. Use `STOP` to end a running program.
-4. If the code fails, the RCA panel appears.
-5. The backend parses the traceback, retrieves similar historical bugs, runs root cause analysis, and asks the local Ollama model for developer feedback.
-6. The panel shows the symptom, root cause, recommended fix, evidence, developer fix plan, prevention checks, and debugging questions.
-7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
-8. Change the local AI model using the model dropdown in the top toolbar. Pull the selected model in Ollama before using it.
+</details>
 
-The Explorer loads the available predefined scripts from the local `examples/` folder. These intentionally fail for debugging demonstrations; you can also run them locally, for example with `python examples/division_error.py`.
+<details>
+<summary><strong>API endpoints</strong></summary>
 
-Running a file copies the browser workspace into Pyodide, with the active file's folder as its working directory. Sibling imports such as `from helper import answer`, nested packages, and relative data-file reads work within that workspace. Each Run starts a fresh Python worker; the console keeps state between REPL commands until the next Run/Stop. Workspace files stay in browser storage and are not uploaded to a server for execution.
+Use the backend's `/docs` page for request schemas and interactive examples.
 
-Deleting a predefined example requires `EXAMPLE_DELETE_PASSWORD` from `backend/.env` and permanently removes its disk file. Ordinary workspace files need no password and are removed from the browser's saved workspace. Deleted examples are not recreated on reload; existing browser files are preserved under `workspace/`.
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/health` | API health, provider and hosted mode. |
+| GET | `/workspace/examples` | Available bundled examples. |
+| POST | `/workspace/examples/delete` | Protected example deletion. |
+| POST | `/rca` | Analyze a supplied Python traceback and code. |
+| POST | `/log-debug` | Extract failure context and RCA from a log payload. |
+| POST | `/stream-feedback` | Stream Groq or Ollama feedback. |
+| POST | `/translate-feedback` | Translate generated RCA through Sarvam. |
+| GET | `/similar-bugs` | Retrieve related bug records. |
+| POST | `/semantic-search` | Search bug records using error/code context. |
+| POST | `/generate-embedding` | Generate an embedding for supplied text. |
+| GET | `/embeddings` | Inspect stored vector records. |
+| POST | `/execute` | Local API subprocess execution; disabled in hosted mode. |
+| POST | `/stop` | Stop local API execution; disabled in hosted mode. |
+| POST | `/ingest-bugsinpy` | Import a local dataset; disabled in hosted mode. |
 
-### Python autocomplete
+</details>
 
-Type a prefix such as `pri` to see Python built-ins, keywords, and function/variable names declared in the current file. Use the arrow keys to select a suggestion, then Tab or Enter to accept; Ctrl+Space opens the list manually and Escape dismisses it. Normal Tab indentation is preserved when the suggestion list is closed.
+### Checks
 
-The list also offers editable templates for functions, classes, loops, conditionals, and try/except blocks. Completion runs entirely in the browser, without AI requests. This basic version does not infer object types, imported-library members, or names from other files; suggestions are suppressed in comments, strings, and member-access contexts.
+From the project root, with frontend dependencies installed and your backend Python environment activated:
 
-### Workspace panels
-
-- Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Closing a panel with **×** hides it and preserves its contents.
-- RCA survives file switches, edits, and closing/reopening the panel until another file runs. Successful runs leave no previous analysis.
-- Drag the left sidebar's right edge, Analysis's left edge, or Console's top edge to resize. Arrow keys also work when an edge is focused; double-click to reset its size. Sizes and visibility are saved locally.
-- Use the console chevron to maximize/restore, or select **Reset panel layout** to restore the defaults.
-- Shortcuts: `Ctrl+B` Explorer, `Ctrl+J` Console, `Ctrl+Alt+A` Analysis. Use Command instead of Ctrl on macOS.
-
-## Log Debugger
-
-PyGlide also supports log-based debugging without running the original source file.
-
-1. Select the local Ollama model from the model dropdown.
-2. Click `LOG DEBUGGER` in the left sidebar.
-3. Upload a `.log`, `.txt`, `.out`, `.err`, `.trace`, `.csv`, `.xlsx`, or `.xls` file. Excel uploads require the optional readers described in setup.
-4. The backend extracts the strongest traceback/error signal, runs semantic retrieval and RCA, then streams feedback from the selected Ollama model.
-5. The same RCA panel shows the log excerpt, root cause, fix plan, evidence, prevention checks, debugging questions, and translation controls.
-
-## Backend Endpoints
-
-- `POST /execute` - run Python code and return execution output, RCA, semantic matches, and LLM feedback
-- `POST /rca` - generate RCA and LLM feedback from a supplied traceback/code payload
-- `POST /log-debug` - extract error context from uploaded logs and return RCA-ready details
-- `POST /stream-feedback` - stream local Ollama feedback for code errors or log errors
-- `GET /embeddings` - inspect stored vector records
-- `POST /ingest-bugsinpy` - ingest BugsInPy records into the vector store
-- `POST /generate-embedding` - generate an embedding for custom text
-- `POST /translate-feedback` - translate generated RCA feedback with Sarvam Translate
-- `GET /workspace/examples` - list the example files currently on disk
-- `POST /workspace/examples/delete` - permanently delete selected examples, checking the password for predefined files
-
-## Ollama Notes
-
-The LLM feedback module supports switching models through PyGlide's top toolbar dropdown.
-
-The configured local model options are:
-
-- `qwen2.5-coder:1.5b` (default coding model)
-- `llama3.2:1b` (general reasoning option)
-- `phi4-mini:latest` (additional reasoning option)
-
-The **Model Guide** lists these options and lets you select one. It does not display unmeasured response-time or quality claims.
-
-Pull the selected model with `ollama pull <model-name>` as shown in setup.
-
-To add a model to the active IDE, update `LOCAL_MODELS` in `index.html` and pull it in Ollama.
-
-Response time and feedback quality depend on the selected model, available memory, hardware, and error context.
-
-## Sarvam Translation
-
-PyGlide's RCA panel can translate the generated English explanation into Indian languages through Sarvam Translate.
-
-Reports are translated in ordered chunks of at most 2,000 characters, with a 20,000-character report limit. The complete translation is returned only when every chunk succeeds. A quota failure keeps the English RCA available and shows an error. Translation runs outside the API event loop so other requests can proceed.
-
-Set `SARVAM_API_KEY` in the terminal used to start the backend. For PowerShell:
-
-```powershell
-$env:SARVAM_API_KEY = "your_key_here"
-python main.py
+```bash
+npm test
+npm run build
+python -m unittest discover -s backend/tests -v
 ```
 
-Run from `backend/` with your environment's Python. In Bash, use `export SARVAM_API_KEY="your_key_here"`. Alternatively, copy `backend/.env.example` to `backend/.env` and enter the key there. The environment variable takes priority. Keep real keys out of committed files.
-
-The translation feature uses:
-
-- Backend endpoint: `POST /translate-feedback`
-- Frontend control: `Translate Generated RCA` in the RCA panel
-- Default source language: `en-IN`
-- Target languages include Hindi, Bengali, Gujarati, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Urdu, and more.
+The tests cover workspace persistence, completions, font loading, runtime startup, per-tab input routing, provider failures, translation and protected deletion. Backend tests use mocked cloud responses and temporary example copies. For a deployment, also check actual execution, `input()`, RCA and log uploads as described in [DEPLOYMENT.md](DEPLOYMENT.md#4-connect-the-two-services).
 
 ## Troubleshooting
 
-If the RCA panel says the backend is unavailable:
-
-- Make sure Terminal 2 is running `python main.py` inside the `backend` folder.
-- Confirm the backend is reachable at `http://localhost:8000`.
-- Check that the frontend is using the same backend URL.
-
-If you see `ModuleNotFoundError: No module named 'xyz'`:
-
-- Install the missing package with the same Python you use to run the backend, for example:
-
-```powershell
-E:\venvs\logdbg\Scripts\python.exe -m pip install xyz
-```
-
-If pip fails with a long path error or asks for Microsoft Visual C++ Build Tools:
-
-- Follow the **Windows setup** section above. It uses a short venv path and prebuilt packages only.
-
-If translation says the Sarvam API key is missing or returns `invalid_api_key_error`:
-
-- Set a valid Sarvam key in `backend/.env` or the backend terminal's `SARVAM_API_KEY` environment variable. A stale environment variable overrides `.env`.
-- Stop and restart the backend after setting the key.
-- Refresh the frontend with `Ctrl + F5`.
-
-If LLM feedback is weak or falls back:
-
-- Make sure Ollama is running.
-- Make sure the model is pulled:
-
-```bash
-ollama list
-```
-
-- Test Ollama directly:
-
-```bash
-ollama run qwen2.5-coder:1.5b
-```
-
-If frontend does not open on the expected port:
-
-- This project's Vite config uses port `3000`.
-- If the port is occupied, stop the other process or update `vite.config.js`.
-
-## Project Structure
-
-```text
-backend/
-├── .env.example                 # Safe template for ignored local credentials
-├── main.py                      # FastAPI app and API routes
-├── example_files.py             # Disk examples and protected deletion API
-├── requirements.txt             # Backend dependencies
-├── sarvam_translate.py          # Sarvam translation requests and key lookup
-├── embeddings/
-│   └── generator.py             # MiniLM/hash embeddings
-├── ingestion/
-│   ├── bugsinpy.py              # BugsInPy ingestion and startup seeding
-│   └── seed_bugs.json           # Eight bundled source bug records
-├── llm/
-│   └── feedback_model.py        # Ollama-powered developer feedback module
-├── parser/
-│   ├── traceback_parser.py      # Traceback and code-context extraction
-│   └── log_parser.py            # Uploaded log error extraction
-├── rca/
-│   └── engine.py                # Root cause analysis synthesis
-├── runtime/
-│   └── executor.py              # Python subprocess execution
-├── tests/
-│   ├── test_executor.py         # Execution output and traceback contract checks
-│   ├── test_example_files.py    # Disk deletion and password checks using temporary copies
-│   └── test_repository_hygiene.py # Seed recovery and credential configuration tests
-└── vector_db/
-    └── chroma_store.py          # Local vector store and semantic search
-
-examples/                        # Intentionally failing Python demos
-├── complex_call_stack_error.py
-├── division_error.py
-├── examples.py
-├── index.error.py
-├── key_error.py
-├── main.py
-├── name_error.py
-├── oop_complex_error.py
-└── type_error.py
-
-src/
-├── workspace.css                # Active PyGlide panel layout and responsive styles
-├── App.jsx                      # Separate React source implementation
-├── main.jsx                     # Entry point for the separate React implementation
-├── index.css                    # Styles for that implementation
-├── components/
-│   └── RCAPanel.jsx             # RCA/feedback UI panel
-├── hooks/
-│   └── usePyodide.js            # Python runtime hook
-├── services/
-│   └── api.ts                   # Frontend API client/types
-└── utils/
-    └── rcaEngine.js             # RCA helpers
-
-tests/
-├── workspace-state.test.cjs     # Workspace, disk refresh, naming, and preference checks
-└── python-worker.test.cjs       # Runtime readiness and error protocol checks
-
-.gitignore                       # Generated files, local credentials, and dependencies
-index.html                       # Active PyGlide interface and inline React application
-pyworker.js                      # Browser Python execution and REPL through Pyodide
-sw.js                            # Service worker for interactive Python input
-package.json                     # Frontend dependencies/scripts
-package-lock.json                # Locked frontend dependency versions
-vite.config.js                   # Vite server and runtime-worker build configuration
-postcss.config.js                # PostCSS configuration
-tailwind.config.js               # Tailwind configuration
-README.md                        # Setup and usage guide
-```
-
-Generated vector indexes (`backend/chroma_data.json`, `backend/chroma/`) and saved API responses are ignored. Startup rebuilds the index from the eight bundled bug records; imported datasets and local credentials stay outside Git.
-
-## Technologies Used
-
-- React
-- Vite
-- Monaco Editor for Python editing
-- Pyodide and Web Workers for browser-based Python execution
-- Xterm.js for the console and REPL
-- FastAPI
-- Python subprocess execution through the backend API
-- Trace graphs and PageRank for candidate root-cause frame selection
-- Sentence Transformers / deterministic embedding fallback
-- Local vector search
-- Ollama local LLM feedback
-- BugsInPy-style historical bug retrieval
-- Sarvam Translate for optional Indian-language RCA translation
-- Browser local storage for workspace files and panel preferences
+| Symptom | What to check |
+| --- | --- |
+| **Loading Python / Loading Engine** stays visible | Allow the initial runtime download. If startup fails, use **RETRY RUNTIME** and check connectivity to the runtime/CDN assets. |
+| Hosted examples or AI are temporarily unavailable | The free backend may be waking up. Wait about a minute and retry; inspect `/health` if it persists. |
+| **Example storage is unavailable** | Check whether Supabase is paused and resume it in its dashboard. Verify the backend project URL, secret key and deletion table. |
+| Local API connection fails | Start the backend and match `VITE_API_URL` with its URL. Check `CORS_ORIGINS` and restart Vite after changing frontend settings. |
+| Ollama feedback falls back | Check that Ollama is running and that `ollama list` includes the selected model. |
+| Groq reports a quota or provider error | Check the backend key, configured model and account limits. Basic debugging remains available. |
+| Translation fails | Check the backend Sarvam key and available credits. A system environment variable can override the key in `backend/.env`. |
+| A Python import fails | Workspace modules must exist in the browser workspace; third-party packages must be available for Pyodide. Installing a backend package does not install it in browser Python. |
+| Local dependencies or ports fail | Use the same activated Python environment for installation and startup. Vite defaults to port `3000`; update its configuration and allowed origins together if needed. |
