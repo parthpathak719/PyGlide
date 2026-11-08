@@ -84,7 +84,7 @@ For persistent shared deletions:
 
 1. Create a **Free** project in [Supabase](https://supabase.com/dashboard).
 2. Run [`supabase/schema.sql`](supabase/schema.sql) once in its SQL Editor.
-3. Add `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and a strong `EXAMPLE_DELETE_PASSWORD` to the **Render backend only**. Use the legacy `service_role` API key for this adapter, not the anonymous/publishable key. Keep the Data API enabled for the `public` schema.
+3. Add `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and a strong `EXAMPLE_DELETE_PASSWORD` to the **Render backend only**. Use a current Supabase secret API key (`sb_secret_...`) in this backend variable; legacy `service_role` JWT keys also work. Do not use an anonymous/publishable key. Keep the Data API enabled for the `public` schema.
 4. Redeploy the backend. A password-authorized example deletion now writes a database tombstone. The example remains hidden after backend restarts and deployments, for all visitors.
 
 Row-level security is enabled with no anonymous access policies. The backend uses the service-role key; visitors never receive it. If Supabase becomes unavailable, example listing returns a storage error instead of bringing deleted examples back. To restore a deleted example deliberately, remove its row in the Supabase dashboard; `__examples_folder__` is the folder-deletion marker.

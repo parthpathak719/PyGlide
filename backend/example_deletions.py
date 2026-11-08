@@ -17,11 +17,15 @@ def _request(method: str, **kwargs):
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     if not url or not key:
         raise HTTPException(503, "Shared example deletion requires Supabase. Configure it using DEPLOYMENT.md.")
+    headers = {"apikey": key, "Prefer": "resolution=ignore-duplicates,return=minimal"}
+    # New secret keys are opaque API keys, not JWT bearer tokens.
+    if not key.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {key}"
     try:
         with httpx.Client(timeout=15) as client:
             response = client.request(
                 method, f"{url}/rest/v1/pyglide_example_deletions",
-                headers={"apikey": key, "Authorization": f"Bearer {key}", "Prefer": "resolution=ignore-duplicates,return=minimal"},
+                headers=headers,
                 **kwargs,
             )
             response.raise_for_status()
