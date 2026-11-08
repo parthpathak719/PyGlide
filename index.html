@@ -179,7 +179,9 @@
 
         const EXAMPLES_FOLDER_ID = 'pyglide-examples';
         const WORKSPACE_FOLDER_ID = 'pyglide-workspace';
-        const EXAMPLES_API = 'http://localhost:8000/workspace/examples';
+        const API_URL = window.PYGLIDE_CONFIG?.apiUrl || 'http://localhost:8000';
+        const IS_HOSTED_AI = window.PYGLIDE_CONFIG?.provider === 'groq';
+        const EXAMPLES_API = `${API_URL}/workspace/examples`;
 
         const extractExceptionType = (msg) => {
             const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
@@ -197,7 +199,7 @@
         };
 
         const fetchLocalMLFeedback = async (traceback, code) => {
-            const response = await fetch('http://localhost:8000/rca', {
+            const response = await fetch(`${API_URL}/rca`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -207,7 +209,7 @@
                     code
                 })
             });
-            if (!response.ok) throw new Error(`Local model server returned ${response.status}`);
+            if (!response.ok) throw new Error(`RCA server returned ${response.status}`);
             const data = await response.json();
             return data.llm_feedback;
         };
@@ -545,14 +547,14 @@
                             <h1>MODEL GUIDE</h1>
                             <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
                         </div>
-                        <p className="model-guide-note">Configured Ollama models for RCA feedback. Response times and output quality have not been benchmarked on this machine.</p>
+                        <p className="model-guide-note">{IS_HOSTED_AI ? 'AI feedback runs on Groq. Code and error context are sent to Groq when you request feedback. The free quota is shared by this demo.' : 'Configured Ollama models for RCA feedback. Response times and output quality have not been benchmarked on this machine.'}</p>
                         <div className="model-guide-list">
                             {LOCAL_MODELS.map(model => (
                                 <section className="model-guide-card" key={model.id}>
                                     <div>
                                         <h2>{model.name}</h2>
                                         <p>{model.description}</p>
-                                        <code>ollama pull {model.id}</code>
+                                        <code>{IS_HOSTED_AI ? model.id : `ollama pull ${model.id}`}</code>
                                     </div>
                                     <button className="btn btn-secondary" onClick={() => onSelect(model.id)} disabled={selectedModel === model.id}>
                                         {selectedModel === model.id ? 'SELECTED' : 'USE MODEL'}
@@ -560,7 +562,7 @@
                                 </section>
                             ))}
                         </div>
-                        <p className="model-guide-note">Install the selected model in your local Ollama instance. Runtime and feedback quality depend on your hardware, model, and input.</p>
+                        <p className="model-guide-note">{IS_HOSTED_AI ? 'No local model installation is needed. AI feedback pauses when the free quota is reached; the Python editor keeps working.' : 'Install the selected model in your local Ollama instance. Runtime and feedback quality depend on your hardware, model, and input.'}</p>
                     </div>
                 </div>
             );
@@ -766,7 +768,9 @@
             return result;
         };
 
-        const LOCAL_MODELS = [
+        const LOCAL_MODELS = IS_HOSTED_AI ? [
+          { id: window.PYGLIDE_CONFIG.groqModel, name: 'Groq Hosted AI', description: 'Cloud AI feedback using the demo’s shared free quota.' }
+        ] : [
           { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Coding-focused option used for developer feedback.' },
           { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'General-purpose option for explaining errors and fixes.' },
           { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Alternative local reasoning option for developer feedback.' }
@@ -897,7 +901,7 @@
                     const saved = localStorage.getItem('pyglide_model');
                     if (LOCAL_MODELS.some(model => model.id === saved)) return saved;
                 } catch (error) {}
-                return 'qwen2.5-coder:1.5b';
+                return LOCAL_MODELS[0].id;
             });
             const selectedModelRef = useRef(selectedModel);
             const activeOperationRef = useRef(null);
@@ -1096,7 +1100,7 @@
                     autoOpenInitialRef.current = false;
                     setExamplesError('');
                 } catch (error) {
-                    if (error.name !== 'AbortError') setExamplesError('Examples unavailable. Start the backend and retry.');
+                    if (error.name !== 'AbortError') setExamplesError(IS_HOSTED_AI ? 'Examples unavailable. The free backend may be waking up; wait about a minute and retry.' : 'Examples unavailable. Start the backend and retry.');
                 } finally {
                     if (!controller.signal.aborted) setExamplesLoading(false);
                 }
@@ -1191,7 +1195,7 @@
                 setTranslationError('');
 
                 try {
-                    const response = await fetch('http://localhost:8000/translate-feedback', {
+                    const response = await fetch(`${API_URL}/translate-feedback`, {
                         method: 'POST',
                         signal: controller.signal,
                         headers: { 'Content-Type': 'application/json' },
@@ -1409,12 +1413,12 @@
                         title: 'Log Debugger',
                         symptom: 'Uploaded log is being scanned for the strongest failure signal.',
                         cause: 'The backend is extracting traceback blocks, severity markers, and exception signatures.',
-                        resolution: 'The selected local Ollama model will explain the root cause after parsing finishes.'
+                        resolution: 'The selected AI model will explain the root cause after parsing finishes.'
                     }
                 });
 
                 try {
-                    const analysisResponse = await fetch('http://localhost:8000/log-debug', {
+                    const analysisResponse = await fetch(`${API_URL}/log-debug`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         signal: controller.signal,
@@ -1496,7 +1500,7 @@
                         }
                     }));
 
-                    const streamResponse = await fetch('http://localhost:8000/stream-feedback', {
+                    const streamResponse = await fetch(`${API_URL}/stream-feedback`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         signal: controller.signal,
@@ -1532,6 +1536,10 @@
                             if (jsonText.trim()) {
                                 try {
                                     const parsed = JSON.parse(jsonText.trim());
+                                    if (parsed.provider_error) {
+                                        finalFeedback = {};
+                                        setRca(p => p ? { ...p, mlError: parsed.provider_error } : p);
+                                    }
                                     const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
                                     const codeActs = ensureArray(parsed.code_actions);
                                     const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
@@ -1748,7 +1756,7 @@
                             const excType = extractExceptionType(error);
                             const excMsg = extractExceptionMessage(error);
 
-                            fetch('http://localhost:8000/stream-feedback', {
+                            fetch(`${API_URL}/stream-feedback`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 signal: controller.signal,
@@ -1791,6 +1799,10 @@
                                         if (jsonText.trim()) {
                                             try {
                                                 const parsed = JSON.parse(jsonText.trim());
+                                                if (parsed.provider_error) {
+                                                    finalFeedback = {};
+                                                    setRca(p => p ? { ...p, mlError: parsed.provider_error } : p);
+                                                }
                                                 const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
                                                 const codeActs = ensureArray(parsed.code_actions);
                                                 const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
@@ -1833,7 +1845,7 @@
                                 setRca(p => p ? {
                                     ...p,
                                     llmLoading: false,
-                                    mlError: `Local ML backend unavailable: ${err.message}`
+                                    mlError: `AI backend unavailable: ${err.message}${IS_HOSTED_AI ? '. The free backend may need about a minute to wake up.' : ''}`
                                 } : p);
                             }).finally(() => {
                                 if (controller.signal.aborted) return;
@@ -2622,7 +2634,7 @@
                         <div className="delete-backdrop" onClick={cancelDeletion}>
                             <form className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" onSubmit={confirmDeletion} onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') cancelDeletion(); }}>
                                 <h2 id="delete-dialog-title">Delete “{deleteTarget.name}”?</h2>
-                                <p>This permanently deletes {deleteTarget.fileCount > 1 ? `${deleteTarget.fileCount} files` : 'the selected item'}. Example files are also removed from the project’s examples folder.</p>
+                                <p>This permanently deletes {deleteTarget.fileCount > 1 ? `${deleteTarget.fileCount} files` : 'the selected item'}. {IS_HOSTED_AI ? 'Deleting a shared example removes it for all visitors.' : 'Example files are also removed from the project’s examples folder.'}</p>
                                 {deleteTarget.deleteFolder && <p>This includes disk examples moved to other workspace folders.</p>}
                                 {deleteTarget.requiresPassword && <label className="delete-password-label">Example deletion password
                                     <input autoFocus type="password" autoComplete="off" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} disabled={isDeleting} required />

@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:8000';
+const API_URL = ((import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export interface ErrorDetails {
   type: string;

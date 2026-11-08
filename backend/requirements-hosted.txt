@@ -1,0 +1,14 @@
+# Render Free: use the existing deterministic hash embedder and JSON vector store.
+# No PyTorch, sentence-transformers, ChromaDB, or local model weights.
+fastapi>=0.110.0,<1
+uvicorn>=0.28.0,<1
+pydantic>=2.6.4,<3
+numpy>=1.26.4,<3
+requests>=2.31.0,<3
+python-multipart>=0.0.9,<1
+httpx>=0.27.0,<1
+python-dotenv>=1.0.0,<2
+# Optional Excel log uploads, including legacy .xls files.
+pandas>=2.2,<3
+openpyxl>=3.1,<4
+xlrd>=2.0,<3

@@ -1,4 +1,9 @@
-from fastapi import FastAPI, HTTPException
+import os
+import time
+from collections import deque
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from example_files import router as example_files_router
@@ -12,9 +17,40 @@ from runtime.executor import execute_code, stop_execution
 from rca.engine import analyze_error
 from sarvam_translate import translate_text
 from vector_db.chroma_store import add_bug_to_db, get_similar_bugs, traceback_collection
+from settings import hosted_mode, llm_provider
 
 app = FastAPI(title="PyGlide API")
 app.include_router(example_files_router)
+_ai_requests = deque()
+
+
+@app.middleware("http")
+async def hosted_limits(request: Request, call_next):
+    if hosted_mode():
+        if request.url.path in {"/execute", "/stop", "/ingest-bugsinpy"}:
+            return JSONResponse(status_code=403, content={"detail": "Server execution and dataset ingestion are disabled on the hosted IDE. Run Python in the browser editor."})
+        if request.method in {"POST", "PUT", "PATCH"}:
+            chunks = []
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 256 * 1024:
+                    return JSONResponse(status_code=413, content={"detail": "This demo accepts requests up to 256 KB."})
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
+        if request.method == "POST" and request.url.path in {"/stream-feedback", "/translate-feedback", "/workspace/examples/delete"}:
+            now = time.monotonic()
+            while _ai_requests and _ai_requests[0] <= now - 60:
+                _ai_requests.popleft()
+            if len(_ai_requests) >= 8:
+                return JSONResponse(status_code=429, content={"detail": "The shared demo limit is 8 AI, translation, or deletion requests per minute. Try again shortly."}, headers={"Retry-After": "60"})
+            _ai_requests.append(now)
+    return await call_next(request)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "llm_provider": llm_provider(), "hosted": hosted_mode()}
 
 
 @app.on_event("startup")
@@ -24,8 +60,8 @@ async def seed_curated_bug_patterns():
 # Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip().rstrip("/") for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if origin.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -168,6 +204,7 @@ async def stream_feedback(request: FeedbackStreamRequest):
             model_name=request.model,
         ),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 @app.post("/stop")

@@ -1,0 +1,45 @@
+# Optional Blueprint. DEPLOYMENT.md also gives the simpler, sequential dashboard setup.
+services:
+  - type: web
+    name: pyglide-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements-hosted.txt
+    startCommand: uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: PYGLIDE_HOSTED
+        value: "true"
+      - key: SEMANTIC_DEBUGGER_EMBEDDER
+        value: hash
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+  - type: web
+    name: pyglide-web
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_LLM_PROVIDER
+        value: groq
+      - key: VITE_GROQ_MODEL
+        value: openai/gpt-oss-20b
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache

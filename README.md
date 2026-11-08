@@ -4,6 +4,8 @@
 
 It includes a multi-file workspace, resizable panels, traceback visualization, and optional Indian-language RCA translation through Sarvam. Code execution and structured debugging currently support **Python**.
 
+**Free cloud deployment:** [DEPLOYMENT.md](DEPLOYMENT.md) describes Render Static Site + Render Free backend + Groq Free AI, so your computer can stay off. Optional Supabase storage preserves shared example deletions. The local Ollama setup below is still supported.
+
 PyGlide uses three local services:
 
 - Frontend IDE: React/Vite app served on `http://localhost:3000`

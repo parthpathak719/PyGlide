@@ -7,6 +7,8 @@ from pathlib import Path
 from dotenv import dotenv_values
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, SecretStr
+import example_deletions
+from settings import hosted_mode
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -50,10 +52,13 @@ def _file(root: Path, name: str) -> Path:
 def list_examples(response: Response):
     root = _directory()
     response.headers["Cache-Control"] = "no-store"
-    if not root.exists():
+    deleted = example_deletions.deleted_names() if hosted_mode() else set()
+    if not root.exists() or example_deletions.FOLDER_MARKER in deleted:
         return {"folder_exists": False, "files": []}
     files = []
     for entry in sorted(root.glob("*.py")):
+        if entry.name in deleted:
+            continue
         path = _file(root, entry.name)
         files.append({
             "id": f"example:{entry.name}", "name": entry.name, "type": "file",
@@ -76,13 +81,20 @@ def delete_examples(request: DeleteExamplesRequest):
 
     # Validate every target and authenticate the entire operation before deleting.
     paths = [_file(root, name) for name in sorted(names)]
-    if names & PREDEFINED_EXAMPLES:
+    if names & PREDEFINED_EXAMPLES or (hosted_mode() and (names or request.delete_folder)):
         expected = os.getenv("EXAMPLE_DELETE_PASSWORD") or dotenv_values(ENV_PATH).get("EXAMPLE_DELETE_PASSWORD")
         if not expected:
             raise HTTPException(503, "Set EXAMPLE_DELETE_PASSWORD in backend/.env before deleting predefined examples.")
         supplied = request.password.get_secret_value() if request.password else ""
         if not hmac.compare_digest(supplied.encode(), expected.encode()):
             raise HTTPException(403, "Incorrect password for predefined example files.")
+
+    if hosted_mode():
+        # Shared cloud deletions survive restarts; bundled source files stay intact.
+        if not example_deletions.configured():
+            raise HTTPException(503, "Shared example deletion requires Supabase. Configure it using DEPLOYMENT.md.")
+        example_deletions.record_deletions(names, request.delete_folder)
+        return {"deleted": sorted(names), "folder_deleted": request.delete_folder}
 
     try:
         for path in paths:

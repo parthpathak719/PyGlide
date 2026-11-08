@@ -1,10 +1,10 @@
 """
 Semantic Cognitive Debugger — LLM Feedback Module
 ==================================================
-Uses a locally-running Ollama model to produce developer feedback
+Uses Ollama locally or Groq in the hosted deployment to produce developer feedback
 from root-cause analysis data, error context, and source code.
 
-No external APIs. No hardcoded responses. The LLM reasons over
+The LLM reasons over
 the full RCA payload and returns structured JSON that the frontend
 can render directly.
 """
@@ -14,9 +14,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+import os
+from typing import Any, Generator
 
 import httpx
+from settings import groq_model, llm_provider
+from llm.groq_provider import call_groq, failure_message, stream_groq
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Ollama configuration
 # ---------------------------------------------------------------------------
 
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = "qwen2.5-coder:1.5b"  # lightweight model; fits in limited RAM
 OLLAMA_TIMEOUT = 120.0            # seconds – large models can be slow
 
@@ -62,15 +65,19 @@ def generate_developer_feedback(
 
     # --- call Ollama -----------------------------------------------------
     try:
-        raw_text = _call_ollama(prompt, model_name=model_name)
+        raw_text = call_groq(prompt, model_name) if llm_provider() == "groq" else _call_ollama(prompt, model_name=model_name)
         feedback = _parse_llm_json(raw_text)
     except Exception as exc:
-        logger.warning("Ollama call failed (%s); using deterministic fallback.", exc)
+        logger.warning("AI call failed (%s); using deterministic fallback.", type(exc).__name__)
         feedback = _deterministic_fallback(error, rca, similar_bugs)
+        feedback["provider_error"] = failure_message(exc) if llm_provider() == "groq" else "Ollama is unavailable. Basic RCA is still available."
 
     # --- normalise into the exact frontend shape -------------------------
     res = _normalise_feedback(feedback, error, rca)
-    res["model_name"] = model_name or OLLAMA_MODEL
+    res["model_name"] = groq_model() if llm_provider() == "groq" else (model_name or OLLAMA_MODEL)
+    if feedback.get("provider_error"):
+        res["provider_error"] = feedback["provider_error"]
+        res["mode"] = "deterministic_fallback"
     return res
 
 
@@ -295,7 +302,7 @@ def _normalise_feedback(
     return {
         "model_name": MODEL_NAME,
         "model_version": MODEL_VERSION,
-        "mode": "ollama",
+        "mode": llm_provider(),
         "training_record_count": 0,
         "predicted_exception_type": exception_type,
         "headline": _str(feedback, "headline", f"{exception_type} detected"),
@@ -351,8 +358,7 @@ def _deterministic_fallback(
     return {
         "headline": f"{exception_type}: {message}" if message else f"{exception_type} detected",
         "diagnosis": rca_summary or f"A {exception_type} was raised. "
-                     "The Ollama LLM is not reachable so this is a minimal analysis. "
-                     "Please ensure Ollama is running (ollama serve) and try again for a detailed report.",
+                     "AI feedback is unavailable, so this report uses basic RCA. Try again later for AI feedback.",
         "root_cause": rca_summary,
         "primary_fix": suggested_fix or "Review the traceback and inspect the variables at the failing line.",
         "severity": "high",
@@ -473,47 +479,57 @@ def stream_developer_feedback_generator(
     similar_bugs: list[dict[str, Any]] | None = None,
     source_code: str = "",
     model_name: str | None = None,
-) -> typing.Generator[str, None, None]:
-    """Stream raw feedback text from Ollama and then yield separator + normalized JSON."""
-    import typing
+) -> Generator[str, None, None]:
+    """Stream AI text followed by the existing separator and normalized metadata."""
     rca = rca or {}
     similar_bugs = similar_bugs or []
     prompt = _build_prompt(error, rca, similar_bugs, source_code)
     
-    selected_model = model_name or OLLAMA_MODEL
+    provider = llm_provider()
+    selected_model = groq_model() if provider == "groq" else (model_name or OLLAMA_MODEL)
     raw_text = ""
+    provider_error = ""
     try:
-        payload = {
-            "model": selected_model,
-            "prompt": prompt,
-            "stream": True,
-            "options": {
-                "temperature": 0.4,
-                "num_predict": 1024,
-                "num_ctx": 2048,
-            },
-        }
-        with httpx.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=OLLAMA_TIMEOUT) as r:
-            r.raise_for_status()
-            for chunk in r.iter_lines():
-                if chunk:
-                    try:
-                        data = json.loads(chunk)
-                        response_text = data.get("response", "")
-                        raw_text += response_text
-                        yield response_text
-                    except Exception:
-                        pass
+        if provider == "groq":
+            for response_text in stream_groq(prompt, model_name):
+                raw_text += response_text
+                yield response_text
+        else:
+            for response_text in _stream_ollama(prompt, selected_model):
+                raw_text += response_text
+                yield response_text
+        if not raw_text.strip():
+            raise RuntimeError("The AI returned no feedback.")
     except Exception as exc:
-        logger.warning("Ollama stream failed (%s); using deterministic fallback.", exc)
-        fallback_text = "Ollama connection failed or model not responding. Loading local deterministic fallback...\n"
-        yield fallback_text
-        raw_text = fallback_text
+        logger.warning("AI stream failed (%s); using deterministic fallback.", type(exc).__name__)
+        provider_error = failure_message(exc) if provider == "groq" else "Ollama is unavailable. Basic RCA is still available."
 
-    feedback = _parse_llm_json(raw_text)
+    feedback = _deterministic_fallback(error, rca, similar_bugs) if provider_error else _parse_llm_json(raw_text)
     normalized = _normalise_feedback(feedback, error, rca)
     normalized["model_name"] = selected_model
-    
+    if provider_error:
+        normalized["provider_error"] = provider_error
+        normalized["mode"] = "deterministic_fallback"
     yield "\n[METADATA_SEPARATOR]\n"
     yield json.dumps(normalized)
+
+
+def _stream_ollama(prompt: str, selected_model: str):
+    payload = {
+        "model": selected_model,
+        "prompt": prompt,
+        "stream": True,
+        "options": {"temperature": 0.4, "num_predict": 1024, "num_ctx": 2048},
+    }
+    with httpx.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=OLLAMA_TIMEOUT) as response:
+        response.raise_for_status()
+        for chunk in response.iter_lines():
+            if chunk:
+                try:
+                    data = json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue
+                if data.get("error"):
+                    raise RuntimeError("Ollama stopped the feedback stream.")
+                yield data.get("response", "")
 
