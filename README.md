@@ -16,7 +16,7 @@ PyGlide uses three local services:
 
 Install these before running the project:
 
-- Node.js 18+ and npm
+- Node.js 22.12+ and npm
 - Python 3.10+ recommended (3.11 or newer works)
 - Ollama
 - The Ollama models used by the project: `qwen2.5-coder:1.5b`, `llama3.2:1b`, `phi4-mini:latest`
@@ -29,8 +29,8 @@ Internet access is needed for CDN assets and optional Sarvam translation; Ollama
 Clone the repo and enter the project folder:
 
 ```bash
-git clone git@github.com:pranavachudha/WebIDE_with_SemanticLogDebugger_RootCauseAnalysis.git
-cd WebIDE_with_SemanticLogDebugger_RootCauseAnalysis
+git clone https://github.com/parthpathak719/PyGlide.git
+cd PyGlide
 ```
 
 Install frontend dependencies:
@@ -135,6 +135,8 @@ http://localhost:3000
 
 The Explorer loads the available predefined scripts from the local `examples/` folder. These intentionally fail for debugging demonstrations; you can also run them locally, for example with `python examples/division_error.py`.
 
+Running a file copies the browser workspace into Pyodide, with the active file's folder as its working directory. Sibling imports such as `from helper import answer`, nested packages, and relative data-file reads work within that workspace. Each Run starts a fresh Python worker; the console keeps state between REPL commands until the next Run/Stop. Workspace files stay in browser storage and are not uploaded to a server for execution.
+
 Deleting a predefined example requires `EXAMPLE_DELETE_PASSWORD` from `backend/.env` and permanently removes its disk file. Ordinary workspace files need no password and are removed from the browser's saved workspace. Deleted examples are not recreated on reload; existing browser files are preserved under `workspace/`.
 
 ### Workspace panels
@@ -189,6 +191,8 @@ Response time and feedback quality depend on the selected model, available memor
 ## Sarvam Translation
 
 PyGlide's RCA panel can translate the generated English explanation into Indian languages through Sarvam Translate.
+
+Reports are translated in ordered chunks of at most 2,000 characters, with a 20,000-character report limit. The complete translation is returned only when every chunk succeeds. A quota failure keeps the English RCA available and shows an error. Translation runs outside the API event loop so other requests can proceed.
 
 Set `SARVAM_API_KEY` in the terminal used to start the backend. For PowerShell:
 

@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PyGlide | Premium Python IDE</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.13/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script type="module" src="/src/monaco-runtime.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -182,6 +182,46 @@
         const API_URL = window.PYGLIDE_CONFIG?.apiUrl || 'http://localhost:8000';
         const IS_HOSTED_AI = window.PYGLIDE_CONFIG?.provider === 'groq';
         const EXAMPLES_API = `${API_URL}/workspace/examples`;
+        const HOSTED_BODY_LIMIT = 256 * 1024;
+        const logRequestBody = (filename, text) => JSON.stringify({ filename, log_text: text, top_k: 5 });
+        const fitsHostedRequest = body => new TextEncoder().encode(body).byteLength <= HOSTED_BODY_LIMIT;
+
+        const runtimeWorkspace = (files, activeId, activeCode) => {
+            const byId = new Map(files.map(file => [file.id, file]));
+            const pathFor = file => {
+                const parts = [];
+                const visited = new Set();
+                while (file) {
+                    if (visited.has(file.id) || !validWorkspaceName(file.name)) return null;
+                    visited.add(file.id);
+                    parts.unshift(file.name);
+                    file = byId.get(file.parentId);
+                }
+                return parts.join('/');
+            };
+            const snapshot = files.filter(file => file.type === 'file').map(file => ({
+                path: pathFor(file), content: file.id === activeId ? activeCode : (file.content || '')
+            })).filter(file => file.path);
+            const active = byId.get(activeId);
+            return { files: snapshot, filename: (active && pathFor(active)) || 'main.py' };
+        };
+
+        const inputClientId = () => new Promise((resolve, reject) => {
+            const controller = navigator.serviceWorker?.controller;
+            if (!controller) { resolve(''); return; }
+            const channel = new MessageChannel();
+            const timer = setTimeout(() => {
+                channel.port1.close();
+                reject(new Error('Python input could not connect to this tab. Reload the page and retry.'));
+            }, 5000);
+            channel.port1.onmessage = event => {
+                clearTimeout(timer);
+                channel.port1.close();
+                if (event.data.clientId) resolve(event.data.clientId);
+                else reject(new Error('Python input could not identify this tab. Reload the page and retry.'));
+            };
+            controller.postMessage({ type: 'input_client_id' }, [channel.port2]);
+        });
 
         const extractExceptionType = (msg) => {
             const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
@@ -919,6 +959,7 @@
             const filesRef = useRef(files);
             const [storageError, setStorageError] = useState('');
             const [examplesError, setExamplesError] = useState('');
+            const [logUploadError, setLogUploadError] = useState('');
             const [examplesLoading, setExamplesLoading] = useState(true);
             const examplesRequestRef = useRef(null);
             const [deleteTarget, setDeleteTarget] = useState(null);
@@ -937,6 +978,7 @@
             const pendingInputUidRef = useRef(null);
             const isReplRef = useRef(true);
             const workerRef = useRef(null);
+            const inputOwnerRef = useRef(null);
             const streamAbortControllerRef = useRef(null);
             const logFileInputRef = useRef(null);
             
@@ -1082,8 +1124,9 @@
                 setExamplesLoading(true);
                 try {
                     const response = await fetch(EXAMPLES_API, { cache: 'no-store', signal: controller.signal });
-                    const data = await response.json();
+                    const data = await response.json().catch(() => ({}));
                     if (!response.ok) throw new Error(data.detail || 'Could not load the example files.');
+                    if (!Array.isArray(data.files)) throw new Error('The examples service returned an unexpected response. Please retry.');
                     if (controller.signal.aborted) return;
                     const next = mergeExampleFiles(filesRef.current, data);
                     const fileIds = new Set(next.filter(file => file.type === 'file').map(file => file.id));
@@ -1100,7 +1143,9 @@
                     autoOpenInitialRef.current = false;
                     setExamplesError('');
                 } catch (error) {
-                    if (error.name !== 'AbortError') setExamplesError(IS_HOSTED_AI ? 'Examples unavailable. The free backend may be waking up; wait about a minute and retry.' : 'Examples unavailable. Start the backend and retry.');
+                    if (error.name !== 'AbortError') setExamplesError(error instanceof TypeError
+                        ? (IS_HOSTED_AI ? 'Examples unavailable. The free backend may be waking up; wait about a minute and retry.' : 'Examples unavailable. Start the backend and retry.')
+                        : error.message || 'Examples unavailable. Please retry.');
                 } finally {
                     if (!controller.signal.aborted) setExamplesLoading(false);
                 }
@@ -1220,18 +1265,8 @@
             };
 
             useEffect(() => {
-                if (window.require && monacoRef.current && !editorInstance.current) {
-                    window.MonacoEnvironment = {
-                        getWorkerUrl: function(workerId, label) {
-                            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-                                self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/' };
-                                importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/base/worker/workerMain.js');
-                            `)}`;
-                        }
-                    };
-                    
-                    window.require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
-                    window.require(['vs/editor/editor.main'], function() {
+                const initializeEditor = () => {
+                    if (!window.monaco || !monacoRef.current || editorInstance.current) return;
                         window.monaco.editor.defineTheme('pyglide-dark', {
                             base: 'vs-dark',
                             inherit: true,
@@ -1241,6 +1276,8 @@
                         editorInstance.current = window.monaco.editor.create(monacoRef.current, {
                             value: '', 
                             language: 'python',
+                            // Keep the established textarea input path for browser/accessibility compatibility.
+                            editContext: false,
                             theme: 'pyglide-dark',
                             automaticLayout: true,
                             minimap: { enabled: false },
@@ -1255,8 +1292,14 @@
                         });
                         
                         setEditorReady(true);
-                    });
-                }
+                };
+                initializeEditor();
+                window.addEventListener('pyglide-monaco-ready', initializeEditor);
+                return () => {
+                    window.removeEventListener('pyglide-monaco-ready', initializeEditor);
+                    editorInstance.current?.dispose();
+                    editorInstance.current = null;
+                };
             }, []);
 
             const activeFile = files.find(f => f.id === activeId);
@@ -1315,6 +1358,11 @@
                 const file = event.target.files && event.target.files[0];
                 event.target.value = '';
                 if (!file) return;
+                setLogUploadError('');
+                if (IS_HOSTED_AI && file.size > HOSTED_BODY_LIMIT) {
+                    setLogUploadError('This hosted demo accepts requests up to 256 KiB. Choose a smaller log (Excel files must be under about 192 KiB).');
+                    return;
+                }
                 clearAnalysis();
                 const uploadEpoch = analysisEpochRef.current;
                 const logModel = selectedModelRef.current;
@@ -1418,15 +1466,15 @@
                 });
 
                 try {
+                    const body = logRequestBody(file.name, logText);
+                    if (IS_HOSTED_AI && !fitsHostedRequest(body)) {
+                        throw new Error('The encoded upload exceeds the 256 KiB request limit. Shorten the log or choose a smaller Excel file (under about 192 KiB).');
+                    }
                     const analysisResponse = await fetch(`${API_URL}/log-debug`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         signal: controller.signal,
-                        body: JSON.stringify({
-                            filename: file.name,
-                            log_text: logText,
-                            top_k: 5
-                        })
+                        body
                     });
 
                     const analysis = await analysisResponse.json().catch(() => ({}));
@@ -1666,9 +1714,15 @@
                 }
             }, []);
 
-            const rebootWorker = (fromRun = false, preserveConsole = false) => {
+            const rebootWorker = async (fromRun = false, preserveConsole = false) => {
+                if (inputOwnerRef.current) navigator.serviceWorker?.controller?.postMessage({
+                    type: 'cancel_inputs', ownerId: inputOwnerRef.current
+                });
+                const ownerId = crypto.randomUUID();
+                inputOwnerRef.current = ownerId;
                 if (workerRef.current) {
                     workerRef.current.terminate();
+                    workerRef.current = null;
                 }
                 isWaitingForInputRef.current = false;
                 pendingInputUidRef.current = null;
@@ -1684,7 +1738,19 @@
                 setEngineReady(false);
                 setEngineError('');
                 runtimeStateRef.current.ready = false;
-                const w = new Worker('/pyworker.js?t=' + Date.now());
+                let clientId;
+                try {
+                    clientId = await inputClientId();
+                } catch (error) {
+                    if (inputOwnerRef.current !== ownerId) return null;
+                    runtimeStateRef.current.running = false;
+                    setIsRunning(false);
+                    setEngineError(error.message);
+                    return null;
+                }
+                if (inputOwnerRef.current !== ownerId) return null;
+                const params = new URLSearchParams({ client_id: clientId, owner: ownerId, t: Date.now() });
+                const w = new Worker('/pyworker.js?' + params);
                 w.onmessage = (e) => {
                     if (workerRef.current !== w) return;
                     const { type, msg, uid, id, error, result } = e.data;
@@ -1869,39 +1935,45 @@
                     setEngineError(event.message || 'Python worker failed.');
                     event.preventDefault();
                 };
+                return w;
             };
 
             // Initialize Service Worker and Web Worker
             useEffect(() => {
+                const onInputRequest = event => {
+                    if (event.data?.type !== 'input_requested' || event.data.ownerId !== inputOwnerRef.current) return;
+                    if (!runtimeStateRef.current.running) return;
+                    showConsole();
+                    pendingInputUidRef.current = event.data.uid;
+                    isWaitingForInputRef.current = true;
+                    isReplRef.current = false;
+                };
+                const onControllerChange = () => {
+                    if (!workerRef.current) rebootWorker();
+                };
                 if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.addEventListener('message', onInputRequest);
+                    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
                     navigator.serviceWorker.register('/sw.js').then(() => {
-                        if (!workerRef.current) {
+                        if (navigator.serviceWorker.controller && !workerRef.current) {
                             rebootWorker();
-                        }
-                        if (!navigator.serviceWorker.controller) {
-                            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                                if (!workerRef.current) rebootWorker();
-                            });
                         }
                     }).catch(err => {
                         console.error("SW Registration failed:", err);
                         rebootWorker(); // Fallback
                     });
                     
-                    navigator.serviceWorker.addEventListener('message', (event) => {
-                        if (event.data && event.data.type === 'input_requested') {
-                            if (!runtimeStateRef.current.running) return;
-                            showConsole();
-                            pendingInputUidRef.current = event.data.uid;
-                            isWaitingForInputRef.current = true;
-                            isReplRef.current = false;
-                        }
-                    });
                 } else {
                     rebootWorker();
                 }
 
-                return () => { if (workerRef.current) workerRef.current.terminate(); };
+                return () => {
+                    navigator.serviceWorker?.removeEventListener('message', onInputRequest);
+                    navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
+                    navigator.serviceWorker?.controller?.postMessage({ type: 'cancel_inputs', ownerId: inputOwnerRef.current });
+                    inputOwnerRef.current = null;
+                    if (workerRef.current) workerRef.current.terminate();
+                };
             }, []);
 
             const provideInput = async (value) => {
@@ -1909,14 +1981,18 @@
                 
                 const formData = new FormData();
                 formData.append('uid', pendingInputUidRef.current);
+                formData.append('owner', inputOwnerRef.current);
                 formData.append('value', value);
                 
                 pendingInputUidRef.current = null;
                 
-                await fetch('/__pyglide_provide_input__', {
+                const response = await fetch('/__pyglide_provide_input__', {
                     method: 'POST',
                     body: formData
                 });
+                if (!response.ok) {
+                    termInstance.current?.write('\r\nInput request expired. Stop and run the program again.\r\n');
+                }
             };
 
             const run = async () => {
@@ -1930,13 +2006,15 @@
                 setIsRunning(true);
                 
                 
-                rebootWorker(true);
+                const runningWorker = await rebootWorker(true);
+                if (!runningWorker || !runtimeStateRef.current.running) return;
                 
                 isReplRef.current = false;
                 isWaitingForInputRef.current = false;
                 currentLineRef.current = '';
                 
-                workerRef.current.postMessage({ type: 'run', id: 'run_main', code: currentCode });
+                runningWorker.postMessage({ type: 'run', id: 'run_main', code: currentCode,
+                    workspace: runtimeWorkspace(filesRef.current, activeIdRef.current, currentCode) });
             };
             
             const handleReplEnter = async (code) => {
@@ -1951,11 +2029,11 @@
                 activeOperationRef.current = { code: trimmed, filename: 'Console', model: selectedModelRef.current, epoch: analysisEpochRef.current };
                 runtimeStateRef.current.running = true;
                 setIsRunning(true);
-                workerRef.current.postMessage({ type: 'repl', id: 'repl_' + Date.now(), code: trimmed });
+                workerRef.current.postMessage({ type: 'repl', id: 'repl_' + Date.now(), code: trimmed,
+                    workspace: runtimeWorkspace(filesRef.current, activeIdRef.current, editorInstance.current?.getValue() || '') });
             };
 
             const stopRuntime = () => {
-                if (pendingInputUidRef.current) provideInput('').catch(() => {});
                 activeOperationRef.current = null;
                 runtimeStateRef.current.running = false;
                 setIsRunning(false);
@@ -2323,7 +2401,7 @@
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
                                 PROGRAMMER FOCUS
                             </button>
-                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title="View Local Model Guide">
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title={IS_HOSTED_AI ? 'View Hosted Model Guide' : 'View Local Model Guide'}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                                 MODEL GUIDE
                             </button>
@@ -2333,8 +2411,10 @@
                                     LOG DEBUGGER
                                 </button>
                                 <span style={{fontSize:'0.6rem', color:'var(--text-dim)', paddingLeft:'28px', opacity:0.75, fontStyle:'italic'}}>
-                                    Accepts: .log, .txt, .out, .err, .trace, .csv, .xlsx
+                                    Accepts: .log, .txt, .out, .err, .trace, .csv, .xlsx, .xls
                                 </span>
+                                {IS_HOSTED_AI && <span className="workspace-note">Up to 256 KiB per request; Excel under about 192 KiB.</span>}
+                                {logUploadError && <span className="workspace-note workspace-error" role="alert">{logUploadError}</span>}
                             </div>
                         </div>
 

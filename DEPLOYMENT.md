@@ -2,7 +2,9 @@
 
 Use a **Render Static Site** for the IDE and a **Render Free Web Service** for FastAPI. AI feedback uses the **Groq Free plan**. Supabase Free is optional unless you need shared example deletions to survive restarts.
 
-The editor runs Python in each visitor's browser through Pyodide. Your computer and Ollama do not need to run after deployment. AI feedback sends code/error context to Groq; workspace files remain in that browser's local storage, so they do not sync between devices. Supported Python packages are those available in Pyodide, not arbitrary server-installed packages.
+The editor runs Python in each visitor's browser through Pyodide. Your computer and Ollama do not need to run after deployment. AI feedback sends code/error context to Groq; workspace files remain in that browser's local storage, so they do not sync between devices. Running a file mirrors the workspace into Pyodide and uses that file's directory for sibling imports and data files. Supported Python packages are those available in Pyodide, not arbitrary server-installed packages.
+
+Builds require Node.js 22.12 or newer. Monaco is bundled by Vite rather than loaded from a separate CDN version. Its npm DOMPurify dependency and its vendored ESM import are both routed to the patched version pinned in `package.json` and `vite.config.js`. React and Babel CDN URLs are pinned.
 
 ## 1. Publish this version to GitHub
 
@@ -93,14 +95,15 @@ Example source content ships in Git. Supabase stores deletion records. Workspace
 
 ## Optional Sarvam translation
 
-Add `SARVAM_API_KEY` only to the backend if you want translation. Sarvam has separate credit limits; omit the key for a deployment using only the free Render and Groq services. An absent/exhausted translation key does not stop the Python editor or RCA.
+Add `SARVAM_API_KEY` only to the backend if you want translation. Sarvam has separate credit limits; omit the key for a deployment using only the free Render and Groq services. An absent/exhausted translation key does not stop the Python editor or RCA. Reports up to 20,000 characters are translated in ordered chunks of at most 2,000 characters; a failed chunk returns an error rather than an incomplete success.
 
 ## Free-tier behavior
 
 - [Render Free](https://render.com/docs/free) sleeps after 15 idle minutes, takes about a minute to wake, and shares 750 free instance hours per workspace per month. Backend files reset on restarts. The static frontend remains independently available.
 - Render bandwidth/build limits apply. Keep the workspace free and avoid adding a payment method if your requirement is strictly ₹0; without a payment method Render suspends services/builds when the relevant included quotas are exhausted. Do not choose paid compute or add a paid disk/database.
 - [Groq Free](https://console.groq.com/docs/rate-limits) has request/token quotas shared by the account. PyGlide shows quota failures and retains basic RCA. Hosted mode adds a shared limit of eight AI, translation, or example-deletion requests per minute and caps request bodies at 256 KB. Groq context is capped at 14,000 characters plus the system instructions; long inputs are truncated for AI feedback. The upstream token quota can still be reached sooner.
-- [Supabase Free](https://supabase.com/pricing) includes 500 MB database space and pauses projects after a week of inactivity; resume a paused project in its dashboard.
+- The hosted upload control checks the UTF-8 JSON request size before sending. Excel is base64-encoded, so choose workbooks under about 192 KiB; the full encoded request must fit within 256 KiB.
+- [Supabase Free](https://supabase.com/docs/guides/platform/free-project-pausing) may pause projects with low activity over seven days; resume a paused project in its dashboard. Regular database activity helps, but a single weekly visit is not a guarantee. Loading examples makes a database request; running browser Python alone does not.
 - This setup is suitable for a college project/demo within quotas. Free services do not promise uninterrupted availability or unlimited traffic. No keep-alive service is required, and your PC can stay off.
 
 ## Optional Blueprint

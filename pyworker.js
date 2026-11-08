@@ -1,6 +1,46 @@
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodideReadyPromise;
+const inputParams = new URL(self.location.href).searchParams;
+const inputClientId = inputParams.get('client_id') || '';
+const inputOwnerId = inputParams.get('owner') || '';
+const WORKSPACE_ROOT = '/home/pyglide';
+let previousWorkspacePaths = new Set();
+
+async function syncWorkspace(pyodide, workspace) {
+    if (!workspace) return undefined;
+    const safePath = path => typeof path === 'string' && path.split('/').every(
+        part => part && part !== '.' && part !== '..' && !part.includes('\\') && !part.includes('\0')
+    );
+    const files = workspace.files || [];
+    if (!safePath(workspace.filename) || files.some(file => !safePath(file.path) || typeof file.content !== 'string')) {
+        throw new Error('Invalid workspace paths. Rename the affected files and retry.');
+    }
+    const next = new Set(files.map(file => WORKSPACE_ROOT + '/' + file.path));
+    for (const path of previousWorkspacePaths) {
+        if (!next.has(path)) pyodide.FS.unlink(path);
+    }
+    for (const file of files) {
+        const path = WORKSPACE_ROOT + '/' + file.path;
+        pyodide.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
+        pyodide.FS.writeFile(path, file.content, { encoding: 'utf8' });
+    }
+    previousWorkspacePaths = next;
+    const filename = WORKSPACE_ROOT + '/' + workspace.filename;
+    const directory = filename.slice(0, filename.lastIndexOf('/'));
+    pyodide.FS.mkdirTree(directory);
+    pyodide.globals.set('__pyglide_directory__', directory);
+    pyodide.globals.set('__pyglide_root__', WORKSPACE_ROOT);
+    await pyodide.runPythonAsync(`
+import os as __pyglide_os, sys as __pyglide_sys, importlib as __pyglide_importlib
+__pyglide_os.chdir(__pyglide_directory__)
+__pyglide_sys.path[:] = [__pyglide_directory__, __pyglide_root__] + [
+    p for p in __pyglide_sys.path if p not in (__pyglide_directory__, __pyglide_root__)
+]
+__pyglide_importlib.invalidate_caches()
+`);
+    return filename;
+}
 
 async function initPyodide() {
     const pyodide = await loadPyodide({
@@ -31,22 +71,25 @@ sys.stderr = CustomStream('stderr')
     pyodide.setStdin({
         stdin: () => {
             
-            // Generate a unique ID for this input request
-            const uid = Math.random().toString(36).substring(7);
+            if (!inputClientId || !inputOwnerId) {
+                throw new Error('Interactive input needs a service worker. Reload this page over HTTPS or localhost and retry.');
+            }
+            const uid = crypto.randomUUID();
             
             // Perform a synchronous XHR to the Service Worker
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', '/__pyglide_input__?uid=' + uid, false); // false makes it synchronous!
+            const params = new URLSearchParams({ uid, client_id: inputClientId, owner: inputOwnerId });
+            xhr.open('GET', '/__pyglide_input__?' + params, false);
             
             try {
                 xhr.send(null);
                 if (xhr.status === 200) {
-                    return xhr.responseText + '\n';
+                    return xhr.responseText;
                 }
             } catch(e) {
                 console.error("XHR Sync Input Error:", e);
             }
-            return '\n';
+            throw new Error('Input request expired. Stop and run the program again.');
         }
     });
     
@@ -63,7 +106,7 @@ pyodideReadyPromise = initPyodide().then(pyodide => {
 
 self.onmessage = async (e) => {
     const pyodide = await pyodideReadyPromise;
-    const { id, type, code } = e.data;
+    const { id, type, code, workspace } = e.data;
     if (!pyodide) {
         postMessage({ type: 'error', id, error: 'Python runtime is unavailable. Retry the runtime before running code.' });
         return;
@@ -71,18 +114,20 @@ self.onmessage = async (e) => {
     
     if (type === 'run') {
         try {
+            const filename = await syncWorkspace(pyodide, workspace);
             // First check for syntax errors / compile
             pyodide.globals.set('__preflight_code__', code);
             await pyodide.runPythonAsync("compile(__preflight_code__, '<user_code>', 'exec')");
             
             // Execute
-            await pyodide.runPythonAsync(code);
+            await pyodide.runPythonAsync(code, filename ? { filename } : undefined);
             postMessage({ type: 'done', id });
         } catch (error) {
             postMessage({ type: 'error', id, error: error.toString() });
         }
     } else if (type === 'repl') {
         try {
+            await syncWorkspace(pyodide, workspace);
             const result = await pyodide.runPythonAsync(code);
             postMessage({ type: 'done', id, result: result !== undefined ? String(result) : undefined });
         } catch (error) {

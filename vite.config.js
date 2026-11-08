@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -13,6 +14,14 @@ export default defineConfig(({ mode }) => {
   // Only these public settings enter the frontend. API keys stay on the backend.
   const config = JSON.stringify({ apiUrl, provider, groqModel: model }).replace(/</g, '\\u003c')
   return {
+  resolve: {
+    // Monaco also vendors DOMPurify inside its ESM tree. Use the patched
+    // package for that relative import, as well as the npm dependency.
+    alias: [{
+      find: './dompurify/dompurify.js',
+      replacement: fileURLToPath(new URL('./node_modules/dompurify/dist/purify.es.mjs', import.meta.url))
+    }]
+  },
   plugins: [react(), {
     name: 'pyglide-public-config',
     transformIndexHtml() {
@@ -22,6 +31,11 @@ export default defineConfig(({ mode }) => {
     name: 'pyglide-runtime-assets',
     apply: 'build',
     generateBundle() {
+      for (const id of this.getModuleIds()) {
+        if (id.replaceAll('\\', '/').includes('/base/browser/dompurify/dompurify.js')) {
+          throw new Error('Monaco must use the patched DOMPurify package, not its vendored copy.')
+        }
+      }
       for (const fileName of ['pyworker.js', 'sw.js']) {
         this.emitFile({
           type: 'asset',

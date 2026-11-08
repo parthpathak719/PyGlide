@@ -228,7 +228,7 @@ async def embedding(request: EmbeddingRequest):
     return {"dimension": len(vector), "embedding": vector}
 
 @app.post("/translate-feedback")
-async def translate_feedback(request: TranslationRequest):
+def translate_feedback(request: TranslationRequest):
     try:
         return translate_text(request.text, request.target_language_code)
     except ValueError as exc:

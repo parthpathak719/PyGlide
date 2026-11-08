@@ -8,7 +8,8 @@ const parser = require('@babel/parser');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const source = html.match(/<script type="text\/babel">([\s\S]*?)<\/script>/)[1];
 const names = new Set(['EXAMPLES_FOLDER_ID', 'WORKSPACE_FOLDER_ID', 'loadFiles', 'loadTabs', 'mergeExampleFiles',
-  'subtreeIds', 'validWorkspaceName', 'uniqueCopyName', 'DEFAULT_LAYOUT', 'loadLayout', 'safeGetStats']);
+  'subtreeIds', 'validWorkspaceName', 'uniqueCopyName', 'DEFAULT_LAYOUT', 'loadLayout', 'safeGetStats',
+  'HOSTED_BODY_LIMIT', 'logRequestBody', 'fitsHostedRequest', 'runtimeWorkspace']);
 const program = parser.parse(source, { plugins: ['jsx'] });
 const declarations = program.program.body.filter(node => node.type === 'VariableDeclaration' && node.declarations.some(item => names.has(item.id.name)));
 const clean = value => JSON.parse(JSON.stringify(value));
@@ -16,7 +17,7 @@ const clean = value => JSON.parse(JSON.stringify(value));
 function helpers(saved = {}, width = 1440) {
   const values = new Map(Object.entries(saved).map(([key, value]) => [key, JSON.stringify(value)]));
   const context = vm.createContext({
-    window: { innerWidth: width }, console,
+    window: { innerWidth: width }, console, TextEncoder,
     localStorage: { getItem: key => values.get(key) ?? null },
   });
   vm.runInContext(declarations.map(node => source.slice(node.start, node.end)).join('\n'), context);
@@ -30,6 +31,29 @@ test('unchanged cached examples refresh from disk', () => {
   const h = helpers();
   const result = h.mergeExampleFiles([{ ...diskFile('old'), sourceContent: 'old', parentId: h.EXAMPLES_FOLDER_ID }], { folder_exists: true, files: [diskFile('new')] });
   assert.equal(result.find(file => file.examplePath).content, 'new');
+});
+
+test('upload limit applies to UTF-8 JSON and base64 overhead, not just the original file', () => {
+  const h = helpers();
+  assert.equal(h.fitsHostedRequest(h.logRequestBody('small.log', 'ok')), true);
+  assert.equal(h.fitsHostedRequest(h.logRequestBody('large.xlsx', Buffer.alloc(200 * 1024).toString('base64'))), false);
+  assert.equal(h.fitsHostedRequest(h.logRequestBody('unicode.log', '漢'.repeat(100000))), false);
+});
+
+test('runtime snapshot includes sibling files, current unsaved code, and nested paths without cycles', () => {
+  const h = helpers();
+  const result = h.runtimeWorkspace([
+    { id: 'root', type: 'folder', name: 'project' },
+    { id: 'main', type: 'file', name: 'main.py', parentId: 'root', content: 'old' },
+    { id: 'helper', type: 'file', name: 'helper.py', parentId: 'root', content: 'answer = 42' },
+    { id: 'cycle', type: 'folder', name: 'loop', parentId: 'cycle' },
+    { id: 'bad', type: 'file', name: 'bad.py', parentId: 'cycle' },
+  ], 'main', 'from helper import answer');
+  assert.equal(result.filename, 'project/main.py');
+  assert.deepEqual(clean(result.files), [
+    { path: 'project/main.py', content: 'from helper import answer' },
+    { path: 'project/helper.py', content: 'answer = 42' },
+  ]);
 });
 
 test('local example edits survive an external disk refresh', () => {
