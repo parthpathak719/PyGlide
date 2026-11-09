@@ -91,6 +91,7 @@ print(1 / 0)  # Try the error analysis.
 
 - Type `pri` to see suggestions such as `print`. Use the arrow keys to select one and `Tab` or `Enter` to accept it. `Ctrl+Space` opens suggestions manually. Basic completion covers built-ins and names in the current file.
 - Drag panel edges to resize the workspace. Toggle Explorer, Console and Analysis from the toolbar; closing a panel preserves its contents.
+- Use the sun/moon button to switch between light and dark themes. Your choice is saved in the current browser.
 - Files and layout preferences are saved in the current browser. Use **Download Workspace** to export a ZIP; saved work does not sync between devices.
 - Workspace files can import sibling modules and read relative data files. Third-party packages must be compatible with Pyodide.
 

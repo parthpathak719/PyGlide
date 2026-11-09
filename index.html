@@ -4,6 +4,64 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
+    <script id="pyglide-theme">
+        (() => {
+            const normalize = value => value === 'light' ? 'light' : 'dark';
+            const root = document.documentElement;
+            const apply = (value, persist = true) => {
+                const theme = normalize(value);
+                root.dataset.theme = theme;
+                root.style.colorScheme = theme;
+                document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme);
+                if (persist) { try { localStorage.setItem('pyglide_theme', theme); } catch (error) {} }
+                return theme;
+            };
+            let saved;
+            try { saved = localStorage.getItem('pyglide_theme'); } catch (error) {}
+            apply(saved, false);
+            window.PyGlideTheme = {
+                current: () => normalize(root.dataset.theme),
+                apply,
+                editor: {
+                    dark: {
+                        base: 'vs-dark', inherit: true, rules: [],
+                        colors: {
+                            'editor.background': '#0f0f11',
+                            'scrollbarSlider.background': '#52525e80',
+                            'scrollbarSlider.hoverBackground': '#71717e99',
+                            'scrollbarSlider.activeBackground': '#9393a3aa'
+                        }
+                    },
+                    light: {
+                        base: 'vs', inherit: true, rules: [],
+                        colors: {
+                            'editor.background': '#ffffff',
+                            'editor.foreground': '#172033',
+                            'editorLineNumber.foreground': '#64748b',
+                            'editor.selectionBackground': '#dbeafe',
+                            'scrollbarSlider.background': '#64748b66',
+                            'scrollbarSlider.hoverBackground': '#64748b99',
+                            'scrollbarSlider.activeBackground': '#64748bbb'
+                        }
+                    }
+                },
+                terminal: {
+                    dark: {
+                        background: '#070708', foreground: '#e2e8f0', cursor: '#3b82f6',
+                        selectionBackground: '#3b82f655', red: '#f87171', brightRed: '#f87171'
+                    },
+                    light: {
+                        background: '#ffffff', foreground: '#172033', cursor: '#1d4ed8',
+                        selectionBackground: '#2563eb33', black: '#172033', brightBlack: '#526079',
+                        red: '#b91c1c', brightRed: '#b91c1c', green: '#047857', brightGreen: '#047857',
+                        yellow: '#854d0e', brightYellow: '#854d0e', blue: '#1d4ed8', brightBlue: '#1d4ed8',
+                        magenta: '#7e22ce', brightMagenta: '#7e22ce', cyan: '#0e7490', brightCyan: '#0e7490',
+                        white: '#526079', brightWhite: '#172033'
+                    }
+                }
+            };
+        })();
+    </script>
     <title>PyGlide | Premium Python IDE</title>
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png">
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
@@ -35,25 +93,25 @@
         .sidebar { width: 240px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 2rem 1rem; display: flex; flex-direction: column; }
         .layout > .main { flex: 1; display: flex; flex-direction: column; position: relative; }
         
-        .toolbar { height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; background: rgba(10, 10, 12, 0.8); backdrop-filter: blur(10px); }
+        .toolbar { height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; background: var(--toolbar-bg); backdrop-filter: blur(10px); }
         .editor-zone { flex: 1; position: relative; background: var(--editor-bg); display: flex; overflow: hidden; }
         
         .editor-container { position: relative; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         
         .tabs-container { height: 40px; background: var(--sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: flex-end; padding: 0 10px; gap: 4px; overflow-x: auto; }
-        .editor-tab { padding: 8px 16px; background: rgba(255,255,255,0.02); color: var(--text-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; }
+        .editor-tab { padding: 8px 16px; background: var(--surface); color: var(--text-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; }
         .editor-tab.active { background: var(--editor-bg); color: var(--accent); border-color: var(--border); font-weight: 600; border-top: 2px solid var(--accent); }
-        .editor-tab:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--text); }
+        .editor-tab:hover:not(.active) { background: var(--surface-hover); color: var(--text); }
         .tab-close { font-size: 14px; opacity: 0.5; cursor: pointer; }
         .tab-close:hover { opacity: 1; color: var(--error); }
         
         #monaco-container { flex: 1; width: 100%; height: 100%; }
         
-        .terminal { display: flex; flex-direction: column; border-top: 1px solid var(--border); background: #070708; z-index: 50; position: relative; }
+        .terminal { display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--terminal-bg); z-index: 50; position: relative; }
         .terminal-resizer { width: 100%; height: 6px; cursor: row-resize; position: absolute; top: -3px; left: 0; z-index: 100; transition: background 0.2s; }
         .terminal-resizer:hover, .terminal-resizer:active { background: var(--accent); opacity: 0.8; }
-        .terminal-header { font-size: 0.7rem; color: var(--text-dim); padding: 10px 20px; font-weight: 800; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center; }
-        #xterm-container { flex: 1; overflow: hidden; background: #070708; }
+        .terminal-header { font-size: 0.7rem; color: var(--text-dim); padding: 10px 20px; font-weight: 800; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; justify-content: space-between; align-items: center; }
+        #xterm-container { flex: 1; overflow: hidden; background: var(--terminal-bg); }
         .xterm-viewport { overflow-y: auto !important; }
         
         /* ENHANCED RCA PANEL */
@@ -64,7 +122,7 @@
             bottom: 0;
             width: 500px; /* Wider for better reading */
             max-width: 90%;
-            background: rgba(10, 10, 12, 0.98); 
+            background: var(--bg);
             border-left: 1px solid var(--border); 
             backdrop-filter: blur(40px); 
             padding: 2.5rem; 
@@ -95,49 +153,49 @@
         .diagnostic-section { margin-bottom: 1.25rem; }
         .diagnostic-section:last-child { margin-bottom: 0; }
         .diagnostic-label { font-size: 0.65rem; font-weight: 800; color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
-        .diagnostic-text { font-size: 0.9rem; line-height: 1.6; color: #e2e8f0; font-weight: 400; }
+        .diagnostic-text { font-size: 0.9rem; line-height: 1.6; color: var(--text); font-weight: 400; }
         .model-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem; }
-        .model-chip { border: 1px solid rgba(59, 130, 246, 0.25); background: rgba(59, 130, 246, 0.1); color: #bfdbfe; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
-        .model-chip.success { border-color: rgba(16, 185, 129, 0.28); background: rgba(16, 185, 129, 0.1); color: #bbf7d0; }
-        .feedback-block { border: 1px solid var(--border); background: rgba(255,255,255,0.025); border-radius: 10px; padding: 1rem; margin-top: 1rem; }
+        .model-chip { border: 1px solid rgba(59, 130, 246, 0.25); background: rgba(59, 130, 246, 0.1); color: var(--code-text); padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+        .model-chip.success { border-color: rgba(16, 185, 129, 0.28); background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .feedback-block { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 1rem; margin-top: 1rem; }
         .feedback-block-title { color: var(--text-dim); font-size: 0.65rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.75rem; }
-        .feedback-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.65rem; color: #e2e8f0; font-size: 0.84rem; line-height: 1.55; }
+        .feedback-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.65rem; color: var(--text); font-size: 0.84rem; line-height: 1.55; }
         .feedback-list li::marker { color: var(--success); }
-        .code-suggestion { margin-top: 0.75rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(147, 197, 253, 0.12); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.78rem; line-height: 1.5; overflow: auto; }
-        .log-excerpt { margin: 0.75rem 0 0; background: rgba(0,0,0,0.35); border: 1px solid rgba(59, 130, 246, 0.18); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; line-height: 1.55; max-height: 220px; overflow: auto; }
+        .code-suggestion { margin-top: 0.75rem; background: var(--code-bg); border: 1px solid rgba(147, 197, 253, 0.12); border-radius: 8px; padding: 0.85rem; color: var(--code-text); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.78rem; line-height: 1.5; overflow: auto; }
+        .log-excerpt { margin: 0.75rem 0 0; background: var(--code-bg); border: 1px solid rgba(59, 130, 246, 0.18); border-radius: 8px; padding: 0.85rem; color: var(--code-text); white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; line-height: 1.55; max-height: 220px; overflow: auto; }
         .log-upload-input { display: none; }
         .translate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 0.85rem; }
-        .language-select { flex: 1; min-width: 150px; background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; font-family: inherit; outline: none; cursor: pointer; }
-        .language-select option { background: #0a0a0c; color: #e2e8f0; }
-        .translated-output { margin-top: 0.85rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; line-height: 1.6; font-family: inherit; }
-        .translation-error { margin-top: 0.75rem; color: #f87171; font-size: 0.78rem; line-height: 1.5; }
+        .language-select { flex: 1; min-width: 150px; background: var(--surface-hover); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; font-family: inherit; outline: none; cursor: pointer; }
+        .language-select option { background: var(--bg); color: var(--text); }
+        .translated-output { margin-top: 0.85rem; background: var(--code-bg); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem; color: var(--text); white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; line-height: 1.6; font-family: inherit; }
+        .translation-error { margin-top: 0.75rem; color: var(--error-text); font-size: 0.78rem; line-height: 1.5; }
         
         /* GRAPH-BASED RCA STYLES */
         .graph-container { position: relative; padding: 10px 0 20px 30px; }
-        .graph-node { position: relative; background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 12px; margin-bottom: 2.5rem; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .graph-node { position: relative; background: var(--surface); border: 1px solid var(--border); padding: 1.25rem; border-radius: 12px; margin-bottom: 2.5rem; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
         .graph-node.root { border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.05); }
         .graph-node.exception { border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.05); }
         
-        .graph-edge { position: absolute; left: -15px; top: 0; width: 2px; height: 100%; border-left: 2px dashed rgba(255,255,255,0.2); }
-        .graph-arrow { position: absolute; left: -21px; bottom: -25px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid rgba(255,255,255,0.2); }
+        .graph-edge { position: absolute; left: -15px; top: 0; width: 2px; height: 100%; border-left: 2px dashed var(--graph-line); }
+        .graph-arrow { position: absolute; left: -21px; bottom: -25px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid var(--graph-line); }
         
         .node-tag { position: absolute; right: 15px; top: -10px; font-size: 9px; font-weight: 900; padding: 3px 10px; border-radius: 12px; letter-spacing: 0.05em; }
-        .node-tag.root { background: var(--success); color: #000; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
-        .node-tag.exception { background: var(--error); color: #fff; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        .node-tag.root { background: var(--success); color: var(--on-success); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+        .node-tag.exception { background: var(--error); color: var(--on-error); box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
         
         .recommendation-card { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 1.5rem; border-radius: 16px; margin-top: 3rem; }
-        .btn { background: var(--accent); color: #000; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s ease; }
-        .btn:hover:not(:disabled) { background: #60a5fa; transform: translateY(-1px); }
-        .btn-secondary { background: #222; color: #fff; border: 1px solid var(--border); }
-        .btn-secondary:hover { background: #333; }
+        .btn { background: var(--accent); color: var(--on-accent); border: none; padding: 8px 16px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s ease; }
+        .btn:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+        .btn-secondary { background: var(--control-bg); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--control-hover); }
         
         .logo { font-size: 0.85rem; font-weight: 900; letter-spacing: 2px; color: var(--accent); margin-bottom: 3rem; padding-left: 10px; }
         .file-item { padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; border-radius: 6px; transition: all 0.2s; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-weight: 500; overflow: hidden; }
         .file-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-        .file-item:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+        .file-item:hover { background: var(--surface-hover); color: var(--text); }
         .file-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
         
-        .context-menu { position: fixed; background: rgba(20, 20, 22, 0.98); border: 1px solid var(--border); backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 8px; padding: 6px; z-index: 9999; display: flex; flex-direction: column; min-width: 180px; }
+        .context-menu { position: fixed; background: var(--menu-bg); border: 1px solid var(--border); backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 8px; padding: 6px; z-index: 9999; display: flex; flex-direction: column; min-width: 180px; }
         .context-menu-item { padding: 8px 12px; font-size: 0.8rem; color: var(--text); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 10px; transition: background 0.1s; }
         .context-menu-item:hover { background: var(--accent-dim); color: var(--accent); }
         .context-menu-item.danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--error); }
@@ -557,22 +615,22 @@
                         </div>
                         
                         <div className="analytics-overview" style={{display:'grid', gap:'2rem', marginBottom:'2rem'}}>
-                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                            <div style={{background:'var(--surface)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
                                 <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Recorded Failures</div>
                                 <div style={{fontSize:'2rem', fontWeight:800, color:'var(--success)', lineHeight:'1.4'}}>{stats.total}</div>
                                 <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Failures recorded in this browser, not a measure of overall coding ability.</div>
                             </div>
                             
-                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                            <div style={{background:'var(--surface)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
                                 <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Primary Focus Area</div>
                                 <div style={{fontSize:'2rem', fontWeight:800, color:'var(--error)', lineHeight:'1.4'}}>{topError}</div>
-                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Next recorded category: <span style={{color: '#fcd34d'}}>{secondError}</span></div>}
+                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Next recorded category: <span style={{color: 'var(--warning)'}}>{secondError}</span></div>}
                             </div>
                         </div>
 
                         <div className="analytics-details" style={{display:'grid', gap:'2rem'}}>
                             {/* Fault Statistics */}
-                            <div style={{background:'rgba(255,255,255,0.015)', padding:'3rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
+                            <div style={{background:'var(--surface)', padding:'3rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
                                 <h2 style={{fontSize:'1.1rem', fontWeight:800, color:'var(--text-dim)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Fault Statistics</h2>
                                 {entries.length === 0 ? (
                                     <div style={{color:'var(--text-dim)', fontStyle:'italic'}}>No statistical data recorded yet. Start coding!</div>
@@ -581,10 +639,10 @@
                                         {entries.map(([c, count]) => (
                                             <div key={c}>
                                                 <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.9rem', marginBottom:'0.75rem', fontWeight:600}}>
-                                                    <span style={{color: '#e2e8f0'}}>{c.toUpperCase()}</span>
+                                                    <span style={{color: 'var(--text)'}}>{c.toUpperCase()}</span>
                                                     <span style={{color:'var(--accent)'}}>{count} instances</span>
                                                 </div>
-                                                <div style={{height:'6px', background:'rgba(255,255,255,0.05)', borderRadius:'3px', overflow:'hidden'}}>
+                                                <div style={{height:'6px', background:'var(--surface-hover)', borderRadius:'3px', overflow:'hidden'}}>
                                                     <div style={{height:'100%', background:'var(--accent)', width: `${(count/maxVal)*100}%`, borderRadius:'3px'}}></div>
                                                 </div>
                                             </div>
@@ -599,12 +657,12 @@
                                 
                                 <div style={{marginBottom:'3rem'}}>
                                     <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'0.5rem', letterSpacing:'0.1em'}}>Suggested Study Area</div>
-                                    <div style={{fontSize:'1.8rem', fontWeight:600, color:'#fff'}}>{topMeta.focus}</div>
+                                    <div style={{fontSize:'1.8rem', fontWeight:600, color:'var(--text)'}}>{topMeta.focus}</div>
                                 </div>
 
                                 <div>
                                     <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'1.5rem', letterSpacing:'0.1em'}}>Key Practices to Focus On</div>
-                                    <ul style={{margin:0, paddingLeft:'1.5rem', color:'#e2e8f0', fontSize:'1.15rem', lineHeight:'1.8', display:'flex', flexDirection:'column', gap:'1.25rem'}}>
+                                    <ul style={{margin:0, paddingLeft:'1.5rem', color:'var(--text)', fontSize:'1.15rem', lineHeight:'1.8', display:'flex', flexDirection:'column', gap:'1.25rem'}}>
                                         {combinedTips.slice(0, 4).map((tip, idx) => (
                                             <li key={idx} style={{listStyleType:'disc'}}>{tip}</li>
                                         ))}
@@ -921,6 +979,8 @@
                 close: <path d="m6 6 12 12M6 18 18 6"/>,
                 maximize: <path d="m6 14 6-6 6 6"/>,
                 restore: <path d="m6 10 6 6 6-6"/>,
+                sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></>,
+                moon: <path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/>,
                 reset: <><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></>
             };
             return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
@@ -974,6 +1034,7 @@
         }
 
         function App() {
+            const [theme, setTheme] = useState(() => window.PyGlideTheme.current());
             const [selectedModel, setSelectedModel] = useState(() => {
                 try {
                     const saved = localStorage.getItem('pyglide_model');
@@ -1144,6 +1205,11 @@
             const [draggedNodeId, setDraggedNodeId] = useState(null);
             const [dragOverNodeId, setDragOverNodeId] = useState(null);
             const [editorReady, setEditorReady] = useState(false);
+            useLayoutEffect(() => {
+                window.PyGlideTheme.apply(theme);
+                if (editorReady) window.monaco.editor.setTheme(`pyglide-${theme}`);
+                if (termInstance.current) termInstance.current.options.theme = window.PyGlideTheme.terminal[theme];
+            }, [theme, editorReady]);
             const [contextMenu, setContextMenu] = useState(null);
             const [renamingId, setRenamingId] = useState(null);
             const renameCommittedRef = useRef(false);
@@ -1305,16 +1371,8 @@
             useEffect(() => {
                 const initializeEditor = () => {
                     if (!window.monaco || !monacoRef.current || editorInstance.current) return;
-                        window.monaco.editor.defineTheme('pyglide-dark', {
-                            base: 'vs-dark',
-                            inherit: true,
-                            rules: [],
-                            colors: {
-                                'editor.background': '#0f0f11',
-                                'scrollbarSlider.background': '#52525e80',
-                                'scrollbarSlider.hoverBackground': '#71717e99',
-                                'scrollbarSlider.activeBackground': '#9393a3aa'
-                            }
+                        Object.entries(window.PyGlideTheme.editor).forEach(([name, definition]) => {
+                            window.monaco.editor.defineTheme(`pyglide-${name}`, definition);
                         });
                         editorInstance.current = window.monaco.editor.create(monacoRef.current, {
                             value: '', 
@@ -1328,7 +1386,7 @@
                             acceptSuggestionOnEnter: 'smart',
                             acceptSuggestionOnCommitCharacter: false,
                             tabCompletion: 'off',
-                            theme: 'pyglide-dark',
+                            theme: `pyglide-${window.PyGlideTheme.current()}`,
                             automaticLayout: true,
                             minimap: { enabled: false },
                             cursorStyle: 'line',
@@ -1700,7 +1758,7 @@
                     if (!termInstance.current && termRef.current && window.Terminal) {
                         console.log("INITIALIZING XTERM INSTANCE...");
                         const term = new window.Terminal({
-                            theme: { background: '#070708', foreground: '#e2e8f0', cursor: '#3b82f6' },
+                            theme: window.PyGlideTheme.terminal[window.PyGlideTheme.current()],
                             fontFamily: "'JetBrains Mono', monospace",
                             fontSize: 13,
                             cursorStyle: 'bar',
@@ -2447,7 +2505,7 @@
                             </button>
                             <div style={{display:'flex', flexDirection:'column', gap:'4px', width:'100%'}}>
                                 <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace, .csv, .xlsx)">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
                                     LOG DEBUGGER
                                 </button>
                                 <span style={{fontSize:'0.6rem', color:'var(--text-dim)', paddingLeft:'28px', opacity:0.75, fontStyle:'italic'}}>
@@ -2491,8 +2549,8 @@
                                     onChange={(e) => setSelectedModel(e.target.value)}
                                     title="Semantic Engine Model"
                                     style={{
-                                        background: 'rgba(255,255,255,0.05)',
-                                        color: '#e2e8f0',
+                                        background: 'var(--surface-hover)',
+                                        color: 'var(--text)',
                                         border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         padding: '7px 12px',
@@ -2504,7 +2562,7 @@
                                     }}
                                 >
                                     {LOCAL_MODELS.map(m => (
-                                        <option key={m.id} value={m.id} style={{background: '#0a0a0c'}}>{m.name}</option>
+                                        <option key={m.id} value={m.id} style={{background: 'var(--bg)'}}>{m.name}</option>
                                     ))}
                                 </select>
                                 <button className="btn" onClick={run} disabled={!engineReady || !editorReady || isRunning || !activeFile}>{isRunning ? 'RUNNING...' : engineError ? 'RUNTIME UNAVAILABLE' : engineReady && editorReady ? 'EXECUTE RUNTIME' : 'LOADING ENGINE...'}</button>
@@ -2529,6 +2587,9 @@
                                     <PaneIcon name="reset"/>
                                 </button>
                             </div>
+                            <button className="panel-action theme-toggle" onClick={() => setTheme(previous => previous === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+                                <PaneIcon name={theme === 'dark' ? 'sun' : 'moon'}/>
+                            </button>
                             </div>
                         </div>
                         <div className="editor-zone" ref={editorZoneRef} hidden={layout.consoleVisible && consoleMaximized}>
@@ -2569,10 +2630,10 @@
                                     <React.Fragment>
                                         <div className="diagnostic-card" style={{border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.05)'}}>
                                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
-                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>{isLogDebug ? 'LOG LLM ANALYSIS' : 'SEMANTIC LLM ANALYSIS'}</div>
+                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'var(--purple)', letterSpacing:'0.1em'}}>{isLogDebug ? 'LOG LLM ANALYSIS' : 'SEMANTIC LLM ANALYSIS'}</div>
                                                 {rca.llmLoading 
                                                     ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
-                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'#a855f7', animation:'pulse 1s infinite'}}></div> STREAMING...
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'var(--purple)', animation:'pulse 1s infinite'}}></div> STREAMING...
                                                       </div>
                                                     : <div style={{fontSize:'0.65rem', color: rca.mlError ? 'var(--error)' : 'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
                                                         <div style={{width:6, height:6, borderRadius:'50%', background: rca.mlError ? 'var(--error)' : 'var(--success)'}}></div> {rca.mlError ? 'UNAVAILABLE' : 'READY'}
@@ -2582,7 +2643,7 @@
 
                                             {isLogDebug && (
                                                 <div className="feedback-block" style={{borderColor: 'rgba(250, 204, 21, 0.22)'}}>
-                                                    <div className="feedback-block-title" style={{color: '#facc15'}}>Uploaded Log</div>
+                                                    <div className="feedback-block-title" style={{color: 'var(--warning)'}}>Uploaded Log</div>
                                                     <div className="diagnostic-text">{rca.logFilename || 'uploaded.log'}</div>
                                                     {rca.logExcerpt && <pre className="log-excerpt">{rca.logExcerpt}</pre>}
                                                 </div>
@@ -2592,14 +2653,14 @@
                                                 <>
                                                     {activeFeedback.headline && (
                                                         <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
-                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>LLM Diagnosis</div>
-                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.headline}</p>
+                                                            <div className="feedback-block-title" style={{color: 'var(--purple)'}}>LLM Diagnosis</div>
+                                                            <p style={{fontSize: '0.9rem', color: 'var(--text)', lineHeight: 1.6, margin: 0}}>{activeFeedback.headline}</p>
                                                         </div>
                                                     )}
                                                     {activeFeedback.root_cause && (
                                                         <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
-                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>Deep Root Cause</div>
-                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.root_cause}</p>
+                                                            <div className="feedback-block-title" style={{color: 'var(--purple)'}}>Deep Root Cause</div>
+                                                            <p style={{fontSize: '0.9rem', color: 'var(--text)', lineHeight: 1.6, margin: 0}}>{activeFeedback.root_cause}</p>
                                                         </div>
                                                     )}
                                                     {(Array.isArray(activeFeedback.evidence) && activeFeedback.evidence.length > 0) && (
@@ -2695,7 +2756,7 @@
                                             <div className="graph-container">
                                                 {traceFrames.length === 0 && (
                                                     <div className="graph-node">
-                                                        <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc'}}>No structured trace frames detected</div>
+                                                        <div style={{fontSize:'13px', fontWeight:700, color:'var(--text)'}}>No structured trace frames detected</div>
                                                     </div>
                                                 )}
                                                 {traceFrames.map((f, i) => {
@@ -2708,19 +2769,19 @@
                                                             {(isRoot || isException) && (
                                                                 <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
                                                                     {isRoot && (
-                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'#000', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'var(--on-success)', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
                                                                             ROOT CAUSE
                                                                         </div>
                                                                     )}
                                                                     {isException && (
-                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'#fff', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'var(--on-error)', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
                                                                             EXCEPTION
                                                                         </div>
                                                                     )}
                                                                 </div>
                                                             )}
-                                                            <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
-                                                            <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{String(f.code || '').trim()}</div>
+                                                            <div style={{fontSize:'13px', fontWeight:700, color:'var(--text)', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
+                                                            <div style={{fontSize:'12px', color:'var(--blue-text)', fontFamily:'JetBrains Mono, monospace', background:'var(--code-bg)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{String(f.code || '').trim()}</div>
                                                             {i < traceFrames.length - 1 && (
                                                                 <div className="graph-edge">
                                                                     <div className="graph-arrow"></div>
