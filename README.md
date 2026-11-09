@@ -1,4 +1,4 @@
-## PyGlide — Python Web IDE with Semantic Log Debugging & Root Cause Analysis
+# PyGlide — Python Web IDE with Semantic Log Debugging & Root Cause Analysis
 
 A web-based Python IDE for writing code, running programs and understanding errors through AI-assisted root cause analysis.
 
